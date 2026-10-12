@@ -1,6 +1,7 @@
 using AutoHuntTrain.Core.Feed;
 using AutoHuntTrain.Core.Game;
 using AutoHuntTrain.Core.Game.Ops;
+using AutoHuntTrain.Core.Ipc;
 using AutoHuntTrain.Core.Marks;
 using AutoHuntTrain.Core.Stats;
 using AutoHuntTrain.Core.Train;
@@ -42,6 +43,7 @@ internal sealed partial class AutoRide : AutoCommon
     private static readonly TimeSpan PickWindowBeforeStart = TimeSpan.FromMinutes(2);
     // A train is over this long after its announced start, so a data center transfer still underway by then is abandoned.
     private static readonly TimeSpan TrainDuration = TimeSpan.FromMinutes(45);
+    private static readonly TimeSpan InstanceInstructionLifetime = TimeSpan.FromMinutes(2);
 
     private readonly AutoHuntSession session;
     private readonly RideProgress progress;
@@ -64,6 +66,10 @@ internal sealed partial class AutoRide : AutoCommon
     private bool travelling;
     private bool engaging;
     private bool conductorEnded;
+    private bool hasInstanceRequest;
+    private int requestedInstance;
+    private uint requestedInstanceTerritoryId;
+    private DateTime requestedInstanceAtUtc;
     private long lastFlagAtMs;
     private int legCount;
     private int rankACredited;
@@ -80,7 +86,7 @@ internal sealed partial class AutoRide : AutoCommon
         this.announcement = announcement;
         onPosted = OnPosted;
         onSpoken = OnSpoken;
-        interrupted = () => hasPending || conductorEnded;
+        interrupted = () => hasPending || conductorEnded || InstanceInterruptNeeded();
         sampleMarkHealth = SampleMarkHealth;
     }
 
@@ -434,6 +440,11 @@ internal sealed partial class AutoRide : AutoCommon
 
             if (!hasPending)
             {
+                if (await HandlePendingInstanceRequest())
+                {
+                    continue;
+                }
+
                 if (IdleLimitReached())
                 {
                     EndOnSilence(IdleLimitMs());
@@ -548,16 +559,22 @@ internal sealed partial class AutoRide : AutoCommon
         return hasArrivedFlag && post.Repeats(arrivedFlag) ? "the flag last arrived at" : null;
     }
 
-    // Only the conductor followed can end the train. A thank-you before any flag was followed greets the riders rather
-    // than dismissing them.
+    // Standalone instance calls and train-ending phrases are accepted only from the conductor being followed.
     private void OnSpoken(SpokenLine line)
     {
-        if (conductorEnded || !Plugin.Instance.Configuration.EndOnConductorPhrase || !conductor.IsSet || !conductor.Matches(line))
+        if (conductorEnded || !conductor.IsSet || !conductor.Matches(line))
         {
             return;
         }
 
-        if (TrainEndPhrases.Find(line.Text) is not { } phrase)
+        var instance = InstanceHints.ParseStandalone(line.Text);
+        if (instance > 0)
+        {
+            QueueInstanceRequest(instance, line);
+            return;
+        }
+
+        if (!Plugin.Instance.Configuration.EndOnConductorPhrase || TrainEndPhrases.Find(line.Text) is not { } phrase)
         {
             return;
         }
@@ -570,6 +587,135 @@ internal sealed partial class AutoRide : AutoCommon
 
         conductorEnded = true;
         Diag($"Ride: {Conductor.Describe(conductor)} said \"{line.Text}\" via {line.ChatType}, matching \"{phrase}\"; the ride ends {(engaging ? "once the fight in progress finishes" : "now")}");
+    }
+
+    private void QueueInstanceRequest(int instance, in SpokenLine line)
+    {
+        var territoryId = InstanceRequestTerritory();
+        if (territoryId == 0)
+        {
+            Diag($"Instance call: {Conductor.Describe(conductor)} requested i{instance} via {line.ChatType}, but no territory context is known; ignored");
+            return;
+        }
+
+        if (hasInstanceRequest
+            && requestedInstance == instance
+            && requestedInstanceTerritoryId == territoryId
+            && DateTime.UtcNow - requestedInstanceAtUtc <= InstanceInstructionLifetime)
+        {
+            RunLog.Debug($"Instance call: repeated i{instance} from {Conductor.Describe(conductor)} in {TerritoryNames.Of(territoryId)}; refreshed");
+        }
+        else
+        {
+            Diag($"Instance call: {Conductor.Describe(conductor)} requested i{instance} in {TerritoryNames.Of(territoryId)} via {line.ChatType}{(engaging ? "; queued until the fight ends" : travelling ? "; superseding travel once the destination zone loads" : string.Empty)}");
+        }
+
+        requestedInstance = instance;
+        requestedInstanceTerritoryId = territoryId;
+        requestedInstanceAtUtc = DateTime.UtcNow;
+        hasInstanceRequest = true;
+        quietSinceMs = Environment.TickCount64;
+
+        // Preserve the newest conductor destination while its current leg is interrupted for the switch.
+        if (hasPending && pending.TerritoryId == territoryId)
+        {
+            pending = pending with { Instance = instance };
+        }
+        else if (hasLegFlag && legFlag.TerritoryId == territoryId)
+        {
+            pending = legFlag with { Instance = instance };
+            hasPending = true;
+        }
+    }
+
+    private uint InstanceRequestTerritory()
+    {
+        if (hasPending)
+        {
+            return pending.TerritoryId;
+        }
+
+        if (hasLegFlag)
+        {
+            return legFlag.TerritoryId;
+        }
+
+        if (hasArrivedFlag && arrivedFlag.TerritoryId == Svc.ClientState.TerritoryType)
+        {
+            return arrivedFlag.TerritoryId;
+        }
+
+        return Svc.ClientState.TerritoryType;
+    }
+
+    private bool InstanceRequestFresh()
+    {
+        if (!hasInstanceRequest)
+        {
+            return false;
+        }
+
+        if (DateTime.UtcNow - requestedInstanceAtUtc <= InstanceInstructionLifetime)
+        {
+            return true;
+        }
+
+        Diag($"Instance call: i{requestedInstance} for {TerritoryNames.Of(requestedInstanceTerritoryId)} expired before it could be handled");
+        ClearInstanceRequest();
+        return false;
+    }
+
+    private bool InstanceInterruptNeeded()
+    {
+        if (engaging)
+        {
+            return false;
+        }
+
+        var territoryId = Svc.ClientState.TerritoryType;
+        if (InstanceRequestFresh() && requestedInstanceTerritoryId == territoryId)
+        {
+            return LifestreamIPC.Instance.CurrentInstance() != requestedInstance;
+        }
+
+        return hasLegFlag
+            && legFlag.NamesInstance
+            && legFlag.TerritoryId == territoryId
+            && LifestreamIPC.Instance.CurrentInstance() != legFlag.Instance;
+    }
+
+    private async Task<bool> HandlePendingInstanceRequest()
+    {
+        if (!InstanceRequestFresh() || engaging || requestedInstanceTerritoryId != Svc.ClientState.TerritoryType)
+        {
+            return false;
+        }
+
+        var instance = requestedInstance;
+        var territoryId = requestedInstanceTerritoryId;
+        ClearInstanceRequest();
+        progress.SetRidePhase(RidePhase.Travelling);
+        Status = $"Switching {TerritoryNames.Of(territoryId)} to instance {instance}";
+        var changed = await SwitchToInstance(instance, $"ride-instance-{instance}");
+        if (changed)
+        {
+            Diag($"Instance call: confirmed {TerritoryNames.Of(territoryId)} i{LifestreamIPC.Instance.CurrentInstance()}; resuming the train");
+        }
+        else if (!CancelToken.IsCancellationRequested)
+        {
+            Warn($"Instance call: could not switch {TerritoryNames.Of(territoryId)} to i{instance}; waiting for another conductor instruction or flag");
+        }
+
+        BeginWaiting();
+        return true;
+    }
+
+    private void ClearInstanceRequest()
+    {
+        hasInstanceRequest = false;
+        requestedInstance = 0;
+        requestedInstanceTerritoryId = 0;
+        requestedInstanceAtUtc = default;
     }
 
     // Only an announced ride picks: from a flag in the start zone, when known, posted from shortly before the start, or
@@ -632,12 +778,37 @@ internal sealed partial class AutoRide : AutoCommon
         NoteFirstFlag(flag);
         var zoneName = TerritoryNames.Of(flag.TerritoryId);
         var label = $"leg#{++legCount}";
+        if (InstanceRequestFresh() && requestedInstanceTerritoryId == flag.TerritoryId)
+        {
+            flag = flag with { Instance = requestedInstance };
+            ClearInstanceRequest();
+        }
+
         progress.SetFlag(flag);
+        if (flag.NamesInstance && Svc.ClientState.TerritoryType == flag.TerritoryId
+            && LifestreamIPC.Instance.CurrentInstance() != flag.Instance)
+        {
+            progress.SetRidePhase(RidePhase.Travelling);
+            Status = $"Switching {zoneName} to instance {flag.Instance}";
+            Diag($"{label}: the conductor flag requires {zoneName} i{flag.Instance}; switching before following its coordinates");
+            if (!await SwitchToInstance(flag.Instance, $"{label}-instance"))
+            {
+                if (!CancelToken.IsCancellationRequested)
+                {
+                    Warn($"{label}: could not switch to {zoneName} i{flag.Instance}; the flag remains unsettled");
+                }
+
+                BeginWaiting();
+                return;
+            }
+        }
+
         progress.SetRidePhase(RidePhase.Travelling);
         Diag($"{label}: following the flag in {zoneName} at ({flag.MapX:F1}, {flag.MapY:F1}){InstanceText(flag)}, world ({flag.WorldX:F1}, {flag.WorldZ:F1}), posted {(DateTime.UtcNow - flag.PostedAtUtc).TotalSeconds:F0}s ago ({ConditionTag()})");
 
         var leg = new RideLeg(flag, label);
         var completed = false;
+        var interruptedForInstance = false;
         legFlag = flag;
         hasLegFlag = true;
         travelling = true;
@@ -651,12 +822,34 @@ internal sealed partial class AutoRide : AutoCommon
         }
         finally
         {
+            // InstanceInterruptNeeded reads legFlag, so capture the reason before clearing the active-leg state.
+            // Otherwise a cross-zone leg can correctly abort after zoning into the wrong instance, then lose that
+            // reason here and be misreported as a twenty-minute travel timeout.
+            interruptedForInstance = !completed && InstanceInterruptNeeded();
             travelling = false;
             hasLegFlag = false;
         }
 
         if (CancelToken.IsCancellationRequested)
         {
+            return;
+        }
+
+        if (interruptedForInstance)
+        {
+            // A genuinely newer conductor flag still wins. Otherwise preserve this destination through the switch.
+            if (!hasPending || pending.PostedAtUtc <= flag.PostedAtUtc)
+            {
+                pending = flag;
+            }
+
+            if (InstanceRequestFresh() && requestedInstanceTerritoryId == flag.TerritoryId)
+            {
+                pending = pending with { Instance = requestedInstance };
+            }
+
+            hasPending = true;
+            Diag($"{label}: arrived in {zoneName} on the wrong instance; retaining the flag while the ride switches");
             return;
         }
 

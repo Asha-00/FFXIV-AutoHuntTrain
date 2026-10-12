@@ -1,5 +1,6 @@
 using AutoHuntTrain.Core.Feed;
 using AutoHuntTrain.Core.Localization;
+using AutoHuntTrain.Core.Marks;
 using AutoHuntTrain.Core.Train;
 using AutoHuntTrain.Core.Travel;
 using AutoHuntTrain.Windows.Components;
@@ -10,9 +11,9 @@ using System.Numerics;
 
 namespace AutoHuntTrain.Windows.Sections;
 
-// One announced train on the Train page: who, where and when, the post itself cleaned for reading, and what can be
-// done with it. Every text is built once per train, feed change and language; only the countdown changes, once a
-// minute.
+// One HuntAlerts announcement on the Train page: what, where and when, the post itself cleaned for reading, and what
+// can be done with it. The existing layout serves scheduled trains and one-off S ranks. Every static text is built once
+// per announcement, feed change and language; only the countdown or reported age changes once a minute.
 internal sealed partial class TrainDetails
 {
     private const float BackButtonHeight = 28f;
@@ -80,19 +81,33 @@ internal sealed partial class TrainDetails
         var region = RegionLabels.Name(world.Region);
         var zone = TrainFacts.StartZone(announcement);
         var notNamed = Loc.T(L.Details.NotNamed);
-        title = Loc.T(L.Details.Title, ExpansionGroups.LocalName(announcement.Group), world.Name);
+        var creature = announcement.CreatureNameId is > 0
+            ? HuntMarkRegistry.NameOf(announcement.CreatureNameId.Value)
+            : notNamed;
+        title = announcement.IsSRank
+            ? Loc.T(L.Details.TitleSRank, creature, world.Name)
+            : Loc.T(L.Details.Title, ExpansionGroups.LocalName(announcement.Group), world.Name);
         worldBadge = Loc.T(L.Details.WorldLine, world.Name, world.DataCenterName, region);
-        startClock = LocalClock(announcement.StartAtUtc);
+        startClock = LocalClock(announcement.IsSRank ? announcement.PostedAtUtc : announcement.StartAtUtc);
         body = AnnouncementBody.CleanForReading(announcement.Message);
         subtitle = FirstLine(body, worldBadge);
         hasFlagPoint = TrainFacts.TryFlagPoint(announcement, out flagPoint);
-        navHint = Loc.T(L.Details.NavHint, zone.Length > 0 ? zone : notNamed, world.Name);
+        navHint = Loc.T(
+            announcement.IsSRank ? L.Details.NavHintSRank : L.Details.NavHint,
+            zone.Length > 0 ? zone : notNamed,
+            world.Name);
 
         factCount = 0;
         AddFact(L.Details.LabelStartZone, zone.Length > 0 ? zone : notNamed);
         var aetheryte = TrainFacts.Aetheryte(announcement);
         AddFact(L.Details.LabelAetheryte, aetheryte.Length > 0 ? aetheryte : notNamed);
-        AddFact(L.Details.LabelConductor, announcement.NamesConductor ? Conductor.Describe(announcement.Conductor) : notNamed);
+        AddFact(
+            announcement.IsSRank ? L.Details.LabelCreature : L.Details.LabelConductor,
+            announcement.IsSRank
+                ? creature
+                : announcement.NamesConductor
+                    ? Conductor.Describe(announcement.Conductor)
+                    : notNamed);
         AddFact(L.Details.LabelPosted, LocalClock(announcement.PostedAtUtc));
         if (announcement.NamesInstance)
         {
@@ -126,7 +141,7 @@ internal sealed partial class TrainDetails
 
     private static string LocalClock(DateTime utc) => utc.ToLocalTime().ToString("t", Loc.Culture);
 
-    // Badges, the start as a clock time with its countdown, then the actions, on a glass card tinted by the group.
+    // Badges, the start or report time with its relative status, then the actions, on a glass card tinted by the group.
     private void DrawHero(Plugin plugin, in Announcement announcement)
     {
         var scale = ImGuiHelpers.GlobalScale;
@@ -148,12 +163,13 @@ internal sealed partial class TrainDetails
 
         var midY = y + badgeHeight * 0.5f;
         var x = left;
-        x += Badge.DrawLeft(drawList, TextDraw.Upper(Loc.T(L.Details.BadgeTrain)), Styling.AccentGlow, x, midY) + BadgeGap * scale;
+        var typeBadge = announcement.IsSRank ? L.Details.BadgeSRank : L.Details.BadgeTrain;
+        x += Badge.DrawLeft(drawList, TextDraw.Upper(Loc.T(typeBadge)), Styling.AccentGlow, x, midY) + BadgeGap * scale;
         x += Badge.DrawLeft(drawList, GroupLabels.Name(announcement.Group), GroupLabels.Color(announcement.Group), x, midY) + BadgeGap * scale;
         Badge.DrawLeft(drawList, worldBadge, Styling.AccentBlue, x, midY);
         y += badgeHeight + RowGap * scale;
 
-        var label = Loc.T(L.Details.LabelStart);
+        var label = Loc.T(announcement.IsSRank ? L.Details.LabelReported : L.Details.LabelStart);
         TextDraw.SmallCaps(label, new Vector2(left, y), Styling.TextMuted);
         y += TextDraw.SmallCapsSize(label).Y + LabelGap * scale;
         y = DrawStart(announcement, left, y);
@@ -180,11 +196,11 @@ internal sealed partial class TrainDetails
         }
 
         var nowUtc = DateTime.UtcNow;
-        var text = TrainTexts.Countdown(ref countdown, announcement, nowUtc, out var color);
+        var text = TrainTexts.Status(ref countdown, announcement, nowUtc, out var color);
         var textSize = TextDraw.Measure(text);
         var textX = left + clockSize.X + ClockGap * scale;
         TextDraw.At(text, new Vector2(textX, y + (clockSize.Y - textSize.Y) * 0.5f), color);
-        if (announcement.InProgressAt(nowUtc))
+        if (announcement.IsTrain && announcement.InProgressAt(nowUtc))
         {
             Badge.DrawLeft(ImGui.GetWindowDrawList(), Loc.T(L.Feed.InProgress), Styling.AccentAmber, textX + textSize.X + ClockGap * scale, y + clockSize.Y * 0.5f);
         }
@@ -192,7 +208,7 @@ internal sealed partial class TrainDetails
         return y + clockSize.Y;
     }
 
-    // Start zone, aetheryte, conductor, post time and, when known, instance and map spot, in a grid of two or three.
+    // Zone, aetheryte, conductor or creature, post time and, when known, instance and map spot, in a grid of two or three.
     private void DrawFacts()
     {
         var scale = ImGuiHelpers.GlobalScale;

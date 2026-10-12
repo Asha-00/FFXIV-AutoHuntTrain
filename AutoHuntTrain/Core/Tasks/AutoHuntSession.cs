@@ -55,6 +55,12 @@ public sealed class AutoHuntSession
 
     public string JobAbbreviation { get; private set; }
 
+    // The source announcement's kind lets shared running and history views avoid train-only labels during an S-Hunt.
+    // Train is the enum's zero value, so manual conductor rides and sessions created by older code remain trains.
+    internal AnnouncementKind Kind { get; set; } = AnnouncementKind.Train;
+
+    public bool IsSRank => Kind == AnnouncementKind.SRank;
+
     // Filled in by the ride once one exists.
     public string WorldName { get; internal set; } = string.Empty;
 
