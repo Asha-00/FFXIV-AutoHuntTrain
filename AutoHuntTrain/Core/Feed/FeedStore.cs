@@ -6,8 +6,8 @@ using System.Numerics;
 
 namespace AutoHuntTrain.Core.Feed;
 
-// Keeps the announced trains on disk, so a plugin reload or a game restart does not empty the list until the next
-// alert arrives. Worlds are stored by id and rebuilt from the game's sheet on load.
+// Keeps announced trains and S-rank relays on disk, so a plugin reload or game restart does not empty the list until
+// the next alert arrives. Worlds are stored by id and rebuilt from the game's sheet on load.
 internal static class FeedStore
 {
     private const string FileName = "AutoHuntTrain.Feed.json";
@@ -35,7 +35,7 @@ internal static class FeedStore
         }
         catch (Exception exception)
         {
-            RunLog.Warning(exception, "Feed: saving the train list failed");
+            RunLog.Warning(exception, "Feed: saving the announcement list failed");
         }
     }
 
@@ -52,7 +52,7 @@ internal static class FeedStore
         }
         catch (Exception exception)
         {
-            RunLog.Warning(exception, "Feed: reading the saved train list failed; starting empty");
+            RunLog.Warning(exception, "Feed: reading the saved announcement list failed; starting empty");
             return [];
         }
     }
@@ -74,6 +74,11 @@ internal sealed class StoredAnnouncement
     public uint ConductorWorldId { get; set; }
     public string Message { get; set; } = string.Empty;
 
+    // Added after the original train-only feed format. JSON records written by older plugin versions omit these fields;
+    // their default values rebuild as a normal train with no fixed creature.
+    public AnnouncementKind Kind { get; set; } = AnnouncementKind.Train;
+    public uint? CreatureNameId { get; set; }
+
     public static StoredAnnouncement From(in Announcement announcement) => new()
     {
         ReceivedAtUtc = announcement.ReceivedAtUtc,
@@ -89,13 +94,24 @@ internal sealed class StoredAnnouncement
         ConductorName = announcement.Conductor.Name ?? string.Empty,
         ConductorWorldId = announcement.Conductor.WorldId,
         Message = announcement.Message ?? string.Empty,
+        Kind = announcement.Kind,
+        CreatureNameId = announcement.CreatureNameId,
     };
 
-    // A world the client no longer knows makes the train unusable, so it is dropped rather than shown half built.
+    // A world the client no longer knows makes the announcement unusable, so it is dropped rather than shown half built.
     public bool TryRebuild(int id, out Announcement announcement)
     {
         announcement = default;
         if (!Worlds.TryFindById(WorldId, out var world))
+        {
+            return false;
+        }
+
+        // A persisted S-rank relay must retain the exact creature and territory needed to resolve the live mark.
+        // Map coordinates are optional because the one-off hunt can locate the exact actor after reaching the zone.
+        if (Kind == AnnouncementKind.SRank
+            && (CreatureNameId is not > 0
+                || TerritoryId == 0))
         {
             return false;
         }
@@ -114,7 +130,12 @@ internal sealed class StoredAnnouncement
             Instance,
             coordinates,
             conductor,
-            Message ?? string.Empty);
+            Message ?? string.Empty)
+        {
+            Kind = Kind,
+            CreatureNameId = CreatureNameId,
+        };
+
         return true;
     }
 }
