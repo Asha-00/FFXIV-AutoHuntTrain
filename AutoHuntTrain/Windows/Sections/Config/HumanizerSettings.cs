@@ -33,7 +33,7 @@ internal static class HumanizerSettings
     private static readonly string[] roomLabels = new string[roomLevelNames.Length];
 
     private static long moduleCheckAtMs;
-    private static bool moduleMissing;
+    private static int presetMissingModule = -1;
     private static CachedText missingModuleNote;
 
     public static void Draw(Configuration configuration)
@@ -108,9 +108,10 @@ internal static class HumanizerSettings
                 () => configuration.DangerRoomMinLevel, value => configuration.DangerRoomMinLevel = value,
                 () => configuration.DangerRoomMaxLevel, value => configuration.DangerRoomMaxLevel = value));
 
-        if (PresetLacksMovementModule())
+        var missing = PresetMissingMovementModule();
+        if (missing >= 0)
         {
-            SettingsRow.Note(missingModuleNote.Get(0, static _ => Loc.T(L.Humanizer.CombatMovementNoModule, HuntCombatPreset.Name)), Styling.AccentAmber);
+            SettingsRow.Note(missingModuleNote.Get(missing, static index => Loc.T(L.Humanizer.CombatMovementNoModule, HuntCombatPreset.Names[index])), Styling.AccentAmber);
         }
     }
 
@@ -123,17 +124,28 @@ internal static class HumanizerSettings
         }
     }
 
-    private static bool PresetLacksMovementModule()
+    // The first bundled preset without the module, or -1 when each has it or the combat plugin did not answer.
+    private static int PresetMissingMovementModule()
     {
         var now = Environment.TickCount64;
         if (now < moduleCheckAtMs)
         {
-            return moduleMissing;
+            return presetMissingModule;
         }
 
         moduleCheckAtMs = now + ModuleCheckIntervalMs;
-        moduleMissing = DodgeTuning.PresetHasMovementModule(HuntCombatPreset.Name) == false;
-        return moduleMissing;
+        presetMissingModule = -1;
+        var presets = HuntCombatPreset.Names;
+        for (var presetIndex = 0; presetIndex < presets.Length; presetIndex++)
+        {
+            if (DodgeTuning.PresetHasMovementModule(presets[presetIndex]) == false)
+            {
+                presetMissingModule = presetIndex;
+                break;
+            }
+        }
+
+        return presetMissingModule;
     }
 
     // In unscaled units, as SettingsRow scales the control width itself.

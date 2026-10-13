@@ -51,14 +51,19 @@ internal static class DodgeTuning
 
     public static void Release()
     {
-        for (var presetIndex = 0; presetIndex < tunedPresets.Count; presetIndex++)
+        var tunedCount = tunedPresets.Count;
+        if (tunedCount == 0)
         {
-            var preset = tunedPresets[presetIndex];
-            ClearTracks(preset);
-            RunLog.Info($"Hunt: the dodge tuning on the '{preset}' preset was taken back");
+            return;
+        }
+
+        for (var presetIndex = 0; presetIndex < tunedCount; presetIndex++)
+        {
+            ClearTracks(tunedPresets[presetIndex]);
         }
 
         tunedPresets.Clear();
+        RunLog.Info($"Hunt: the dodge tuning was taken back from {tunedCount} combat preset(s)");
     }
 
     // Null when the combat plugin cannot hand the preset back, so nothing is claimed about a preset it never showed.

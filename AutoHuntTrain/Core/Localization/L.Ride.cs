@@ -52,6 +52,8 @@ internal static partial class L
         public static readonly LocString PullWaitHelp = new("ride.settings.pullWaitHelp", "How long to wait at a flag for the mark to show up and be pulled. When the time runs out, the ride gives the mark up and waits for the next flag.");
         public static readonly LocString EndWhenAllCredited = new("ride.settings.endWhenAllCredited", "End when every mark is credited");
         public static readonly LocString EndWhenAllCreditedHelp = new("ride.settings.endWhenAllCreditedHelp", "End the ride on its own once as many marks are credited as the expansion has A ranks: 17 in A Realm Reborn, 12 in every later expansion.");
+        public static readonly LocString TagWithRanged = new("ride.settings.tagWithRanged", "Tag marks with ranged attacks");
+        public static readonly LocString TagWithRangedHelp = new("ride.settings.tagWithRangedHelp", "Attack marks with one weak attack instead of the full rotation, so a mark that melts in seconds lives long enough for the whole train to land a hit. One landed hit is all the credit asks. Tanks and melee jobs use their ranged attack from about 20 yalms; ranged jobs, casters and healers use their basic single-target attack. BossMod still dodges, and anything else that attacks you is fought with the full rotation. When the attack cannot go off for 15 seconds with the mark in range, that mark is fought with the full rotation too. Jobs without such an attack, such as Monk, and characters that have not learned it yet fight marks as usual.");
 
         public static readonly LocString ChatOpenTrain = new("ride.chat.openTrain", "Open the Train page");
     }

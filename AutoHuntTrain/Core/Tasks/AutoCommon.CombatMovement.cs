@@ -37,7 +37,8 @@ public abstract partial class AutoCommon
         }
     }
 
-    // Rolled once as a mark's hunt begins and never mid-fight, so no track flips while the character is dodging.
+    // Rolled once as a mark's hunt begins and never mid-fight, so no track flips while the character is dodging. Every
+    // bundled preset takes the same roll, so it holds whichever one fights the mark.
     private void TuneDodging(string markName)
     {
         var configuration = Plugin.Instance.Configuration;
@@ -55,13 +56,25 @@ public abstract partial class AutoCommon
         }
 
         var roll = DodgeTuning.Roll(configuration);
-        if (!DodgeTuning.Apply(HuntCombatPreset.Name, roll))
+        var presets = HuntCombatPreset.Names;
+        var tuned = 0;
+        for (var presetIndex = 0; presetIndex < presets.Length; presetIndex++)
         {
-            LogDodgeTuningRefused($"the '{HuntCombatPreset.Name}' preset has no NormalMovement module, or the combat plugin's build lacks these options");
+            if (DodgeTuning.Apply(presets[presetIndex], roll))
+            {
+                tuned++;
+                continue;
+            }
+
+            LogDodgeTuningRefused($"the '{presets[presetIndex]}' preset has no NormalMovement module, or the combat plugin's build lacks these options");
+        }
+
+        if (tuned == 0)
+        {
             return;
         }
 
-        Diag($"Hunt: dodging for {markName} rolled dodge delay {roll.DodgeDelayOption}, movement delay {roll.MovementDelayOption}, extra room {roll.CushionOption}");
+        Diag($"Hunt: dodging for {markName} rolled dodge delay {roll.DodgeDelayOption}, movement delay {roll.MovementDelayOption}, extra room {roll.CushionOption} on {tuned} preset(s)");
     }
 
     private void LogDodgeTuningRefused(string reason)

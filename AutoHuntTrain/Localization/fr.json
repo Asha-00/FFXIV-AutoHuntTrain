@@ -413,6 +413,8 @@
   "ride.settings.pullWaitHelp": "Combien de temps attendre à un drapeau que la cible apparaisse et soit pull. Une fois le temps écoulé, le trajet abandonne la cible et attend le drapeau suivant.",
   "ride.settings.endWhenAllCredited": "Terminer quand toutes les cibles sont créditées",
   "ride.settings.endWhenAllCreditedHelp": "Terminer le trajet de lui-même dès que le nombre de cibles créditées atteint le nombre de rangs A de l'extension : 17 dans A Realm Reborn, 12 dans chaque extension suivante.",
+  "ride.settings.tagWithRanged": "Toucher les cibles avec des attaques à distance",
+  "ride.settings.tagWithRangedHelp": "Attaque les cibles avec une seule attaque faible au lieu de la rotation complète, pour qu'une cible qui fond en quelques secondes vive assez longtemps pour que tout le train la touche. Un seul coup porté suffit pour être crédité. Les tanks et les DPS de mêlée utilisent leur attaque à distance à environ 20 yalms ; les DPS à distance, les lanceurs de sorts et les soigneurs utilisent leur attaque de base sur une seule cible. BossMod continue d'esquiver, et tout ce qui vous attaque d'autre est combattu avec la rotation complète. Si l'attaque ne peut pas partir pendant 15 secondes alors que la cible est à portée, cette cible est elle aussi combattue avec la rotation complète. Les jobs sans attaque de ce type, comme Moine, et les personnages qui ne l'ont pas encore apprise combattent comme d'habitude.",
   "ride.chat.openTrain": "Ouvrir la page Train",
   "humanizer.tab": "Réactions humaines",
   "humanizer.tabSub": "De courtes pauses aléatoires avant que le trajet n'agisse, comme un joueur qui réagit.",

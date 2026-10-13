@@ -413,6 +413,8 @@
   "ride.settings.pullWaitHelp": "Wie lange an einer Markierung darauf gewartet wird, dass das Ziel auftaucht und gepullt wird. Läuft die Zeit ab, gibt die Fahrt das Ziel auf und wartet auf die nächste Markierung.",
   "ride.settings.endWhenAllCredited": "Beenden, wenn alle Ziele angerechnet sind",
   "ride.settings.endWhenAllCreditedHelp": "Die Fahrt endet von selbst, sobald so viele Ziele angerechnet sind, wie die Erweiterung A-Ränge hat: 17 in A Realm Reborn, 12 in jeder späteren Erweiterung.",
+  "ride.settings.tagWithRanged": "Ziele mit Fernangriffen antaggen",
+  "ride.settings.tagWithRangedHelp": "Greift Ziele mit einem einzigen schwachen Angriff statt der vollen Rotation an, damit ein Ziel, das in Sekunden dahinschmilzt, lange genug lebt, bis der ganze Zug einen Treffer gelandet hat. Für die Anrechnung reicht ein einziger Treffer. Tanks und Nahkämpfer nutzen ihren Fernangriff aus etwa 20 Yalm; Fernkämpfer, Zauberer und Heiler nutzen ihren einfachen Einzelzielangriff. BossMod weicht weiterhin aus, und alles andere, was dich angreift, wird mit der vollen Rotation bekämpft. Kann der Angriff 15 Sekunden lang nicht ausgeführt werden, obwohl das Ziel in Reichweite ist, wird auch dieses Ziel mit der vollen Rotation bekämpft. Jobs ohne einen solchen Angriff, etwa Mönch, und Charaktere, die ihn noch nicht erlernt haben, kämpfen wie gewohnt.",
   "ride.chat.openTrain": "Zug-Seite öffnen",
   "humanizer.tab": "Reaktionen",
   "humanizer.tabSub": "Kurze, zufällige Pausen, bevor die Fahrt handelt, so wie ein Spieler reagiert.",

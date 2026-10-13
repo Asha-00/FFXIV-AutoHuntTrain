@@ -413,6 +413,8 @@
   "ride.settings.pullWaitHelp": "Quanto tempo esperar em uma marcação para o alvo aparecer e receber o pull. Quando o tempo acaba, a viagem desiste do alvo e aguarda a próxima marcação.",
   "ride.settings.endWhenAllCredited": "Encerrar quando todos os alvos forem creditados",
   "ride.settings.endWhenAllCreditedHelp": "Encerrar a viagem sozinha assim que houver tantos alvos creditados quanto a expansão tem de ranks A: 17 em A Realm Reborn e 12 em cada expansão posterior.",
+  "ride.settings.tagWithRanged": "Marcar alvos com ataques à distância",
+  "ride.settings.tagWithRangedHelp": "Ataca os alvos com um único ataque fraco em vez da rotação completa, para que um alvo que derrete em segundos viva o bastante para que todo o trem acerte um golpe. Basta um golpe acertado para ser creditado. Tanques e DPS corpo a corpo usam seu ataque à distância a cerca de 20 yalms; DPS à distância, conjuradores e curandeiros usam seu ataque básico de alvo único. O BossMod continua esquivando, e qualquer outra coisa que ataque você é combatida com a rotação completa. Se o ataque não puder ser usado por 15 segundos com o alvo ao alcance, esse alvo também é combatido com a rotação completa. Classes sem um ataque assim, como Monge, e personagens que ainda não o aprenderam lutam normalmente.",
   "ride.chat.openTrain": "Abrir a página Trem",
   "humanizer.tab": "Reações humanas",
   "humanizer.tabSub": "Pausas curtas e aleatórias antes de a viagem agir, como um jogador reage.",

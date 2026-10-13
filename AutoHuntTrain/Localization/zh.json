@@ -413,6 +413,8 @@
   "ride.settings.pullWaitHelp": "在标记处等待目标出现并被开怪的时间。超时后行程会放弃该目标，转而等待下一个标记。",
   "ride.settings.endWhenAllCredited": "所有目标计入后结束",
   "ride.settings.endWhenAllCreditedHelp": "计入的目标数达到资料片的 A 级数量时自动结束行程：新生 17 个，之后每个资料片 12 个。",
+  "ride.settings.tagWithRanged": "用远程攻击摸目标",
+  "ride.settings.tagWithRangedHelp": "用单一的弱攻击代替完整循环攻击目标，让几秒就被打倒的目标活得足够久，好让整个车队都能打中一下。只要打中一次就能计入。防护职业和近战职业在约 20 米外使用远程攻击；远程物理职业、读条职业和治疗职业使用基础单体攻击。BossMod 仍会负责躲避，其他攻击你的敌人则用完整循环应对。目标在射程内但该攻击 15 秒内都无法施放时，该目标也改用完整循环。没有此类攻击的职业（如武僧）以及尚未习得该攻击的角色照常战斗。",
   "ride.chat.openTrain": "打开车队页面",
   "humanizer.tab": "拟人化",
   "humanizer.tabSub": "行程行动前的短暂随机停顿，像玩家一样作出反应。",

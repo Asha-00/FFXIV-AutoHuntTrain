@@ -26,4 +26,6 @@ public sealed partial class Configuration
     public int PullWaitSeconds { get; set; } = 180;
 
     public bool EndWhenAllCredited { get; set; } = true;
+
+    public bool TagWithRangedAttacks { get; set; } = false;
 }

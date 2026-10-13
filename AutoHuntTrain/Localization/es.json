@@ -413,6 +413,8 @@
   "ride.settings.pullWaitHelp": "Cuánto esperar en una marca a que el objetivo aparezca y reciba el pull. Cuando se agota el tiempo, el viaje abandona el objetivo y espera la siguiente marca.",
   "ride.settings.endWhenAllCredited": "Terminar cuando todos los objetivos estén acreditados",
   "ride.settings.endWhenAllCreditedHelp": "Terminar el viaje por sí solo en cuanto haya tantos objetivos acreditados como rangos A tiene la expansión: 17 en A Realm Reborn y 12 en cada expansión posterior.",
+  "ride.settings.tagWithRanged": "Marcar objetivos con ataques a distancia",
+  "ride.settings.tagWithRangedHelp": "Ataca a los objetivos con un único ataque débil en lugar de la rotación completa, para que un objetivo que se derrite en segundos viva lo bastante como para que todo el tren le acierte un golpe. Basta con un golpe acertado para que se acredite. Los tanques y los DPS cuerpo a cuerpo usan su ataque a distancia desde unos 20 yalmos; los DPS a distancia, los lanzadores y los sanadores usan su ataque básico a un solo objetivo. BossMod sigue esquivando, y cualquier otra cosa que te ataque se combate con la rotación completa. Si el ataque no puede usarse durante 15 segundos con el objetivo a su alcance, ese objetivo también se combate con la rotación completa. Las clases sin un ataque así, como Monje, y los personajes que aún no lo han aprendido combaten como siempre.",
   "ride.chat.openTrain": "Abrir la página Tren",
   "humanizer.tab": "Reacciones humanas",
   "humanizer.tabSub": "Pausas breves y aleatorias antes de que el viaje actúe, como reacciona un jugador.",
