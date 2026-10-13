@@ -25,5 +25,22 @@ internal static partial class L
         public static readonly LocString TeleportOfferHelp = new("humanizer.teleportOfferHelp", "Before accepting a party member's teleport offer during a ride.");
         public static readonly LocString PartyFinder = new("humanizer.partyFinder", "Putting up a Party Finder listing");
         public static readonly LocString PartyFinderHelp = new("humanizer.partyFinderHelp", "In a lull after arriving at the train's start, before the Party Finder is opened to put up the listing.");
+        public static readonly LocString CombatMovement = new("humanizer.combatMovement", "Combat movement");
+        public static readonly LocString CombatMovementEnable = new("humanizer.combatMovementEnable", "Vary dodging in combat");
+        public static readonly LocString CombatMovementEnableHelp = new("humanizer.combatMovementEnableHelp", "BossMod steps out of an AoE the moment it is telegraphed and stops right at its edge, so everyone on a mark who runs this plugin dodges on the same frame to the same spot. When on, each mark rolls a dodge delay, a movement delay and a preference for extra room from the ranges below. The combat preset itself is never changed.");
+        public static readonly LocString CombatMovementOff = new("humanizer.combatMovementOff", "Combat movement variation is off. BossMod dodges the way the combat preset is set up.");
+        public static readonly LocString CombatMovementNoModule = new("humanizer.combatMovementNoModule", "The combat preset '{0}' has no Automatic movement (AI) module, so these settings do nothing there. Add that module to the preset in BossMod, or delete the preset there so the next ride puts the bundled one back.");
+        public static readonly LocString DodgeDelay = new("humanizer.dodgeDelay", "Dodge delay");
+        public static readonly LocString DodgeDelayHelp = new("humanizer.dodgeDelayHelp", "How long BossMod waits before stepping out of a telegraphed AoE. One value is rolled per mark from this range. Longer delays mean getting hit more often and more knockouts, and casters may see more casts cancelled.");
+        public static readonly LocString MoveDelay = new("humanizer.moveDelay", "Movement delay");
+        public static readonly LocString MoveDelayHelp = new("humanizer.moveDelayHelp", "How long BossMod waits before any other repositioning, such as getting back into range of the mark. It only applies when starting to move from standing still. Most players can leave this at None.");
+        public static readonly LocString DangerRoom = new("humanizer.dangerRoom", "Prefer extra room from danger");
+        public static readonly LocString DangerRoomHelp = new("humanizer.dangerRoomHelp", "Asks BossMod to prefer spots further inside safe ground rather than the very edge of an AoE. This is a soft preference, not a guaranteed distance: it depends on BossMod's map resolution, and the lower levels may change nothing at all.");
+        public static readonly LocString LevelNone = new("humanizer.levelNone", "None");
+        public static readonly LocString DelayShort = new("humanizer.delayShort", "0.5 s");
+        public static readonly LocString DelayLong = new("humanizer.delayLong", "1 s");
+        public static readonly LocString RoomSmall = new("humanizer.roomSmall", "Small");
+        public static readonly LocString RoomMedium = new("humanizer.roomMedium", "Medium");
+        public static readonly LocString RoomLarge = new("humanizer.roomLarge", "Large");
     }
 }

@@ -16,11 +16,15 @@ internal static class SettingsControls
     private const float RangeDragWidth = 62f;
     private const float RangeDashSlot = 14f;
     private const float RangeDragSpeed = 0.25f;
+    private const float RangeComboWidth = 96f;
 
     private static readonly string[] languageLabels = BuildLanguageLabels();
 
     public static float RangeInlineWidth()
         => RangeDragWidth * 2f + RangeDashSlot;
+
+    public static float ComboRangeWidth()
+        => RangeComboWidth * 2f + RangeDashSlot;
 
     public static void DrawToggle(Configuration cfg, Func<bool> getter, Action<bool> setter, string id)
     {
@@ -103,6 +107,39 @@ internal static class SettingsControls
 
         DrawRangeBound(cfg, maxId, getMax, setMax, minValue, maxValue, format,
             onChanged: value => { if (value < getMin()) setMin(value); });
+    }
+
+    // A lowest-to-highest pair over a fixed list of levels; the settings hold indexes into labels. Moving one bound past
+    // the other drags the other along.
+    public static void DrawComboRange(Configuration cfg, string minId, string maxId, string[] labels,
+        Func<int> getMin, Action<int> setMin, Func<int> getMax, Action<int> setMax)
+    {
+        var last = labels.Length - 1;
+        var minimum = Math.Clamp(getMin(), 0, last);
+        if (Dropdown.Draw(minId, labels, ref minimum, RangeComboWidth))
+        {
+            setMin(minimum);
+            if (minimum > getMax())
+            {
+                setMax(minimum);
+            }
+
+            cfg.SaveDebounced();
+        }
+
+        DrawRangeDash();
+
+        var maximum = Math.Clamp(getMax(), 0, last);
+        if (Dropdown.Draw(maxId, labels, ref maximum, RangeComboWidth))
+        {
+            setMax(maximum);
+            if (maximum < getMin())
+            {
+                setMin(maximum);
+            }
+
+            cfg.SaveDebounced();
+        }
     }
 
     private static void DrawRangeBound(Configuration cfg, string id, Func<int> getter, Action<int> setter,

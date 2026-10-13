@@ -29,6 +29,12 @@ internal static class EngagementSettings
             SettingsControls.ToggleWidth,
             () => SettingsControls.DrawToggle(configuration, () => configuration.EndWhenAllCredited, value => configuration.EndWhenAllCredited = value, "##aht_engage_endcredited"),
             SettingsRow.ToggleHeight);
+
+        SettingsRow.Draw(Loc.T(L.Ride.TagWithRanged),
+            Loc.T(L.Ride.TagWithRangedHelp),
+            SettingsControls.ToggleWidth,
+            () => SettingsControls.DrawToggle(configuration, () => configuration.TagWithRangedAttacks, value => configuration.TagWithRangedAttacks = value, "##aht_engage_tagranged"),
+            SettingsRow.ToggleHeight);
     }
 
     private static void DrawPullWaitStepper(Configuration configuration)

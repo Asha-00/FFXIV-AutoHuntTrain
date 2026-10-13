@@ -13,17 +13,26 @@ namespace AutoHuntTrain.Core.Ipc;
 // GCD while three mana stacks wait for one, so it stands idle for good, in and out of combat. ST lets it cast them when no
 // idle mob stands in their area, and Break keeps the rest of the rotation going while one does.
 // Pathfind movement lets the combat plugin close to range and dodge once the fight is on.
+// The tag variant keeps the targeting and the movement and drops every rotation: this plugin casts one weak ranged attack
+// itself, so a mark that melts in seconds still lives long enough for a whole train to land its hit. With no rotation
+// asking for a range, Pathfind is left to step out of danger rather than walk into melee.
 internal static class HuntCombatPreset
 {
     public const string Name = "Auto Hunt Train";
 
-    public const int Revision = 2;
+    public const string TagName = "Auto Hunt Train (Tag)";
+
+    public const int Revision = 3;
+
+    public const string MovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
 
     private const string AutoTargetModule = "BossMod.Autorotation.MiscAI.AutoTarget";
-    private const string NormalMovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
     private const string WarriorModule = "BossMod.Autorotation.VeynWAR";
     private const string RotationModulePrefix = "BossMod.Autorotation.xan.";
     private const string RedMageModule = RotationModulePrefix + "RDM";
+
+    // Every bundled preset a mark can be fought with, the full one first.
+    public static readonly string[] Names = [Name, TagName];
 
     private static readonly string[] rotationJobs =
     [
@@ -46,30 +55,26 @@ internal static class HuntCombatPreset
     private static readonly PresetTrack[] redMageTracks = [new("Targeting", "Manual"), new("AOE", "ST"), new("Combo", "Break")];
 
     private static string? serialized;
+    private static string? tagSerialized;
 
-    public static string GetSerialized() => serialized ??= Serialize();
+    public static string GetSerialized(string name)
+        => name == TagName
+            ? tagSerialized ??= Serialize(TagName, withRotations: false)
+            : serialized ??= Serialize(Name, withRotations: true);
 
-    private static string Serialize()
+    private static string Serialize(string name, bool withRotations)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            writer.WriteString("Name", Name);
+            writer.WriteString("Name", name);
             writer.WriteStartObject("Modules");
             WriteModule(writer, AutoTargetModule, autoTargetTracks);
-            WriteModule(writer, NormalMovementModule, movementTracks);
-            WriteModule(writer, WarriorModule, warriorTracks);
-            for (var jobIndex = 0; jobIndex < rotationJobs.Length; jobIndex++)
+            WriteModule(writer, MovementModule, movementTracks);
+            if (withRotations)
             {
-                WriteModule(writer, RotationModulePrefix + rotationJobs[jobIndex], rotationTracks);
-            }
-
-            WriteModule(writer, RedMageModule, redMageTracks);
-
-            for (var roleIndex = 0; roleIndex < roleModules.Length; roleIndex++)
-            {
-                WriteModule(writer, RotationModulePrefix + roleModules[roleIndex], []);
+                WriteRotationModules(writer);
             }
 
             writer.WriteEndObject();
@@ -77,6 +82,22 @@ internal static class HuntCombatPreset
         }
 
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteRotationModules(Utf8JsonWriter writer)
+    {
+        WriteModule(writer, WarriorModule, warriorTracks);
+        for (var jobIndex = 0; jobIndex < rotationJobs.Length; jobIndex++)
+        {
+            WriteModule(writer, RotationModulePrefix + rotationJobs[jobIndex], rotationTracks);
+        }
+
+        WriteModule(writer, RedMageModule, redMageTracks);
+
+        for (var roleIndex = 0; roleIndex < roleModules.Length; roleIndex++)
+        {
+            WriteModule(writer, RotationModulePrefix + roleModules[roleIndex], []);
+        }
     }
 
     private static void WriteModule(Utf8JsonWriter writer, string module, ReadOnlySpan<PresetTrack> tracks)

@@ -45,7 +45,6 @@ public abstract partial class AutoCommon
     private const int MaxMarkEngagementsPerVisit = 16;
     private const byte MarkRoleTank = 1;
     private const byte MarkRoleMelee = 2;
-    private const string MarkMovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
     private const string MarkMovementTrack = "Destination";
     private const string MarkMovementParked = "None";
 
@@ -144,14 +143,22 @@ public abstract partial class AutoCommon
         MarkPhase = HuntPhase.Fighting;
         Diag($"{scope}: {hunt.Name} {sighting.DistanceToHitbox:F0}m away at {FormatPosition(sighting.Position)}, {sighting.CurrentHp} hp ({ConditionTag()})");
         var baselineKilled = ReadMarkProgress(hunt).Killed;
-        var approach = await CloseOnMark(hunt, sighting.GameObjectId, scope);
-        if (approach != MarkFight.Reached)
+        ResolveMarkTag(scope);
+        try
         {
-            Diag($"{scope}: the approach ended {approach}");
-            return approach;
-        }
+            var approach = await CloseOnMark(hunt, sighting.GameObjectId, scope);
+            if (approach != MarkFight.Reached)
+            {
+                Diag($"{scope}: the approach ended {approach}");
+                return approach;
+            }
 
-        return await EngageMark(hunt, sighting.GameObjectId, baselineKilled, scope);
+            return await EngageMark(hunt, sighting.GameObjectId, baselineKilled, scope);
+        }
+        finally
+        {
+            markTag = default;
+        }
     }
 
     private async Task<MarkFight> CloseOnMark(MarkHuntContext hunt, ulong markId, string scope)
@@ -280,6 +287,7 @@ public abstract partial class AutoCommon
         var bounces = 0;
         var outOfReachSince = 0L;
         var repositions = 0;
+        var tagging = new MarkTagging { ActionName = markTag.Name, QuietSince = Environment.TickCount64 };
         // The fight is the combat plugin's to move in; the hold comes back the moment it is over.
         ReleaseCombatMovement(scope);
         try
@@ -321,13 +329,24 @@ public abstract partial class AutoCommon
                 {
                     BossModIPC.Instance.ClearActive();
                     await SafeDismount($"{scope}-dismount");
+                    tagging.QuietSince = Environment.TickCount64;
                     continue;
                 }
 
-                AssertHuntPresetActive();
+                AssertHuntPresetActive(MarkPresetName);
                 if (Svc.Targets.Target?.GameObjectId != markId)
                 {
                     TargetMark(live, scope);
+                }
+
+                var inReach = live.DistanceToHitbox <= reach;
+                if (markTag.IsValid && !TagMark(ref tagging, markId, inReach, now, scope))
+                {
+                    Warn($"{scope}: {markTag.Name} has not gone off at {hunt.Name} in {MarkTagStallMs / TimeUnits.MillisecondsPerSecond}s within reach (last status {tagging.LastStatus}); fighting it with the full preset");
+                    markTag = default;
+                    reach = ReachMeters();
+                    inReach = live.DistanceToHitbox <= reach;
+                    AssertHuntPresetActive(MarkPresetName);
                 }
 
                 if (live.CurrentHp != lastHp)
@@ -346,11 +365,11 @@ public abstract partial class AutoCommon
                     }
 
                     Diag($"{scope}: no damage on {hunt.Name} for {MarkHpStallMs / TimeUnits.MillisecondsPerSecond}s ({ConditionTag()}); restarting the preset ({bounces}/{MaxMarkPresetBounces})");
-                    await BounceHuntPreset();
+                    await BounceHuntPreset(MarkPresetName);
                     hpChangedAt = Environment.TickCount64;
                 }
 
-                if (live.DistanceToHitbox <= reach)
+                if (inReach)
                 {
                     outOfReachSince = 0;
                 }
@@ -369,6 +388,7 @@ public abstract partial class AutoCommon
 
                     await RepositionToMark(hunt, markId, $"{scope}-reposition#{repositions}");
                     outOfReachSince = 0;
+                    tagging.QuietSince = Environment.TickCount64;
                 }
 
                 await NextFrame(MarkFightTickFrames);
@@ -378,6 +398,10 @@ public abstract partial class AutoCommon
         {
             BossModIPC.Instance.ClearActive();
             HoldCombatMovement(scope);
+            if (tagging.Casts > 0)
+            {
+                Diag($"{scope}: {tagging.ActionName} went off {tagging.Casts} time(s) at {hunt.Name}");
+            }
         }
     }
 
@@ -430,7 +454,7 @@ public abstract partial class AutoCommon
                     await SafeDismount($"{scope}-aggro-dismount");
                 }
 
-                AssertHuntPresetActive();
+                AssertHuntPresetActive(HuntCombatPreset.Name);
                 if (Svc.Targets.Target is { } target && (target.IsDead || !EnmityList.Contains(target.EntityId)))
                 {
                     Svc.Targets.Target = null;
@@ -460,8 +484,9 @@ public abstract partial class AutoCommon
 
         var approach = ApproachMeters();
         var destination = MarkFloorNear(live.Position);
-        Diag($"{scope}: {hunt.Name} stayed {live.DistanceToHitbox:F0}m away, out of reach; walking in");
-        var parked = ParkHuntPresetMovement();
+        var preset = MarkPresetName;
+        Diag($"{scope}: {hunt.Name} stayed {live.DistanceToHitbox:F0}m away, out of reach; walking to within {approach:F0}m");
+        var parked = ParkHuntPresetMovement(preset);
         HoldCombatMovement(scope);
         try
         {
@@ -478,7 +503,7 @@ public abstract partial class AutoCommon
             ReleaseCombatMovement(scope);
             if (parked)
             {
-                ResumeHuntPresetMovement();
+                ResumeHuntPresetMovement(preset);
             }
         }
     }
@@ -505,6 +530,7 @@ public abstract partial class AutoCommon
         };
     }
 
+    // Both bundled presets are written together, so a mark can switch between them mid-fight.
     private void EnsureHuntCombatPreset()
     {
         if (huntPresetEnsured)
@@ -513,38 +539,57 @@ public abstract partial class AutoCommon
         }
 
         var configuration = Plugin.Instance.Configuration;
-        var missing = BossModIPC.Instance.GetPreset(HuntCombatPreset.Name) is null;
-        var stale = configuration.BundledCombatPresetRevision < HuntCombatPreset.Revision;
-        if (!missing && !stale)
+        var revision = configuration.BundledCombatPresetRevision;
+        var stale = revision < HuntCombatPreset.Revision;
+        var presets = HuntCombatPreset.Names;
+        for (var presetIndex = 0; presetIndex < presets.Length; presetIndex++)
         {
-            huntPresetEnsured = true;
-            return;
+            if (!EnsureBundledPreset(presets[presetIndex], stale, revision))
+            {
+                return;
+            }
         }
 
-        Diag(missing
-            ? $"Hunt: creating the '{HuntCombatPreset.Name}' combat preset"
-            : $"Hunt: the '{HuntCombatPreset.Name}' preset is at revision {configuration.BundledCombatPresetRevision}, the bundled one is {HuntCombatPreset.Revision}; overwriting it");
-        if (!BossModIPC.Instance.CreatePreset(HuntCombatPreset.GetSerialized(), overwrite: true))
+        if (stale)
         {
-            Warn($"Hunt: the combat plugin refused the '{HuntCombatPreset.Name}' preset; the next mark tries again");
-            return;
+            configuration.BundledCombatPresetRevision = HuntCombatPreset.Revision;
+            configuration.Save();
         }
 
-        configuration.BundledCombatPresetRevision = HuntCombatPreset.Revision;
-        configuration.Save();
         huntPresetEnsured = true;
     }
 
+    // True once the preset is in place, whether it already was or has just been written.
+    private bool EnsureBundledPreset(string preset, bool stale, int revision)
+    {
+        var missing = BossModIPC.Instance.GetPreset(preset) is null;
+        if (!missing && !stale)
+        {
+            return true;
+        }
+
+        Diag(missing
+            ? $"Hunt: creating the '{preset}' combat preset"
+            : $"Hunt: the '{preset}' preset is at revision {revision}, the bundled one is {HuntCombatPreset.Revision}; overwriting it");
+        if (BossModIPC.Instance.CreatePreset(HuntCombatPreset.GetSerialized(preset), overwrite: true))
+        {
+            return true;
+        }
+
+        Warn($"Hunt: the combat plugin refused the '{preset}' preset; the next mark tries again");
+        return false;
+    }
+
     // Re-applied every tick because the combat plugin can drop its active preset whenever combat ends.
-    private void AssertHuntPresetActive()
+    private void AssertHuntPresetActive(string preset)
     {
         var bossMod = BossModIPC.Instance;
-        if (bossMod.GetActive() == HuntCombatPreset.Name)
+        if (bossMod.GetActive() == preset)
         {
             return;
         }
 
-        if (bossMod.SetActive(HuntCombatPreset.Name))
+        if (bossMod.SetActive(preset))
         {
             huntPresetRefusalLogged = false;
             return;
@@ -556,22 +601,22 @@ public abstract partial class AutoCommon
         }
 
         huntPresetRefusalLogged = true;
-        Warn($"Hunt: the combat plugin would not activate the '{HuntCombatPreset.Name}' preset");
+        Warn($"Hunt: the combat plugin would not activate the '{preset}' preset");
     }
 
-    private async Task BounceHuntPreset()
+    private async Task BounceHuntPreset(string preset)
     {
         BossModIPC.Instance.ClearActive();
         await NextFrame(2);
-        AssertHuntPresetActive();
+        AssertHuntPresetActive(preset);
     }
 
     // Hands movement to the pathfinder without dropping the preset, so the rotation keeps attacking on the way in.
-    private static bool ParkHuntPresetMovement()
+    private static bool ParkHuntPresetMovement(string preset)
     {
         var bossMod = BossModIPC.Instance;
         if (bossMod.CanClearTransientStrategy
-            && bossMod.AddTransientStrategy(HuntCombatPreset.Name, MarkMovementModule, MarkMovementTrack, MarkMovementParked))
+            && bossMod.AddTransientStrategy(preset, HuntCombatPreset.MovementModule, MarkMovementTrack, MarkMovementParked))
         {
             return true;
         }
@@ -580,9 +625,9 @@ public abstract partial class AutoCommon
         return false;
     }
 
-    private void ResumeHuntPresetMovement()
+    private void ResumeHuntPresetMovement(string preset)
     {
-        if (BossModIPC.Instance.ClearTransientStrategy(HuntCombatPreset.Name, MarkMovementModule, MarkMovementTrack))
+        if (BossModIPC.Instance.ClearTransientStrategy(preset, HuntCombatPreset.MovementModule, MarkMovementTrack))
         {
             return;
         }
@@ -618,12 +663,15 @@ public abstract partial class AutoCommon
     private static bool FightsInMelee()
         => Svc.Objects.LocalPlayer?.ClassJob.ValueNullable?.Role is MarkRoleTank or MarkRoleMelee;
 
-    private static float ReachMeters() => FightsInMelee() ? MarkMeleeReachMeters : MarkRangedReachMeters;
+    // A tag is fought from its attack's reach, so a melee job tagging a mark stands back like a ranged one.
+    private float ReachMeters()
+        => markTag.IsValid ? markTag.ReachMeters : FightsInMelee() ? MarkMeleeReachMeters : MarkRangedReachMeters;
 
-    private static float ApproachMeters() => FightsInMelee() ? MarkMeleeApproachMeters : MarkRangedApproachMeters;
+    private float ApproachMeters()
+        => markTag.IsValid ? markTag.ReachMeters - MarkTagApproachInsetMeters : FightsInMelee() ? MarkMeleeApproachMeters : MarkRangedApproachMeters;
 
-    private static float LandingStandOffMeters(in MarkSighting mark)
-        => mark.HitboxRadius + (FightsInMelee() ? MarkMeleeLandingGapMeters : MarkRangedLandingGapMeters);
+    private float LandingStandOffMeters(in MarkSighting mark)
+        => mark.HitboxRadius + (!markTag.IsValid && FightsInMelee() ? MarkMeleeLandingGapMeters : MarkRangedLandingGapMeters);
 
     // The floor nearest the mark is the floor it stands on. The floor query answers with the highest floor anywhere in
     // its column, which on a slope is the uphill neighbour metres to the side, so it only serves a mark hovering clear

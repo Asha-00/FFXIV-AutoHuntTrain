@@ -24,6 +24,10 @@ internal static class Humanizer
         return (int)(seconds * TimeUnits.MillisecondsPerSecond);
     }
 
+    // Both bounds are included, and bounds given the wrong way round still draw from between them.
+    public static int RollBetween(int minimum, int maximum)
+        => Random.Shared.Next(Math.Min(minimum, maximum), Math.Max(minimum, maximum) + 1);
+
     public static string Describe(HumanAction action) => action switch
     {
         HumanAction.MoveOff => "moving off",

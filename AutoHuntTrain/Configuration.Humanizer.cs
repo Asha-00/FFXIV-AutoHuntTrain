@@ -45,6 +45,22 @@ public sealed partial class Configuration
 
     public float PartyFinderDelayMaxSeconds { get; set; } = 8.0f;
 
+    public bool CombatMovementEnabled { get; set; } = false;
+
+    // Indexes into the combat plugin's NormalMovement levels, rolled once per mark: the delays None, Short and Long, the
+    // room None, Small, Medium and Large.
+    public int DodgeDelayMinLevel { get; set; } = 0;
+
+    public int DodgeDelayMaxLevel { get; set; } = 1;
+
+    public int MovementDelayMinLevel { get; set; } = 0;
+
+    public int MovementDelayMaxLevel { get; set; } = 0;
+
+    public int DangerRoomMinLevel { get; set; } = 0;
+
+    public int DangerRoomMaxLevel { get; set; } = 2;
+
     public DelayRange DelayFor(HumanAction action) => action switch
     {
         HumanAction.MoveOff => new DelayRange(MoveOffDelayMinSeconds, MoveOffDelayMaxSeconds),

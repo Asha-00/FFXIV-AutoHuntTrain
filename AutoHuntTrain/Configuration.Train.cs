@@ -37,4 +37,6 @@ public sealed partial class Configuration
     public int FlagTeleportWaitSeconds { get; set; } = 60;
 
     public bool AcceptPartyTeleports { get; set; } = false;
+
+    public bool TagWithRangedAttacks { get; set; } = false;
 }

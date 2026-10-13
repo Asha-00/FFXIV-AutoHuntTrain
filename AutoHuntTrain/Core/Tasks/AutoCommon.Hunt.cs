@@ -116,6 +116,7 @@ public abstract partial class AutoCommon
     private async Task<MarkOutcome> RunHunt(MarkHuntContext hunt)
     {
         EnsureHuntCombatPreset();
+        TuneDodging(hunt.Name);
         HoldCombatMovement("hunt");
         var ledger = Plugin.Kills;
         void OnCredited(uint nameId)
@@ -140,6 +141,7 @@ public abstract partial class AutoCommon
             ledger.Credited -= OnCredited;
             ledger.ClearTracking();
             BossModIPC.Instance.ClearActive();
+            DodgeTuning.Release();
             MarkPhase = HuntPhase.Idle;
             Diag($"Hunt: {hunt.Name} ended {outcome} with {hunt.CreditedKills} kill(s) credited after {(Environment.TickCount64 - startedAt) / TimeUnits.MillisecondsPerSecond}s");
         }

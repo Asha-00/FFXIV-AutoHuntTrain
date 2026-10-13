@@ -1,4 +1,5 @@
 using AutoHuntTrain.Core;
+using AutoHuntTrain.Core.Ipc;
 using AutoHuntTrain.Core.Localization;
 using AutoHuntTrain.Windows.Components;
 using Dalamud.Bindings.ImGui;
@@ -11,6 +12,8 @@ internal static class HumanizerSettings
 {
     private const float RangeStepperWidth = 118f;
     private const float RangeGap = 8f;
+    // Fetching a preset serializes it on the combat plugin's side, so the module check is refreshed only this often.
+    private const long ModuleCheckIntervalMs = 5_000;
 
     private readonly record struct DelayRow(HumanAction Action, LocString Label, LocString Help, string MinId, string MaxId);
 
@@ -25,7 +28,23 @@ internal static class HumanizerSettings
         new(HumanAction.PartyFinder, L.Humanizer.PartyFinder, L.Humanizer.PartyFinderHelp, "##aht_human_partyfinder_min", "##aht_human_partyfinder_max"),
     ];
 
+    // Ordered like the combat plugin's options in DodgeTuning.
+    private static readonly LocString[] delayLevelNames = [L.Humanizer.LevelNone, L.Humanizer.DelayShort, L.Humanizer.DelayLong];
+    private static readonly LocString[] roomLevelNames = [L.Humanizer.LevelNone, L.Humanizer.RoomSmall, L.Humanizer.RoomMedium, L.Humanizer.RoomLarge];
+    private static readonly string[] delayLabels = new string[delayLevelNames.Length];
+    private static readonly string[] roomLabels = new string[roomLevelNames.Length];
+
+    private static long moduleCheckAtMs;
+    private static int presetMissingModule = -1;
+    private static CachedText missingModuleNote;
+
     public static void Draw(Configuration configuration)
+    {
+        DrawReactionGroup(configuration);
+        DrawCombatMovementGroup(configuration);
+    }
+
+    private static void DrawReactionGroup(Configuration configuration)
     {
         using var group = SettingsGroup.Begin(Loc.T(L.Humanizer.Group));
 
@@ -47,6 +66,88 @@ internal static class HumanizerSettings
             var row = rows[index];
             SettingsRow.Draw(Loc.T(row.Label), Loc.T(row.Help), controlWidth, () => DrawRange(configuration, row));
         }
+    }
+
+    private static void DrawCombatMovementGroup(Configuration configuration)
+    {
+        using var group = SettingsGroup.Begin(Loc.T(L.Humanizer.CombatMovement));
+
+        SettingsRow.Draw(Loc.T(L.Humanizer.CombatMovementEnable),
+            Loc.T(L.Humanizer.CombatMovementEnableHelp),
+            SettingsControls.ToggleWidth,
+            () => SettingsControls.DrawToggle(configuration, () => configuration.CombatMovementEnabled, value => configuration.CombatMovementEnabled = value, "##aht_human_combat_on"),
+            SettingsRow.ToggleHeight);
+
+        using var body = Motion.PushSwitch("##aht_human_combat_body", configuration.CombatMovementEnabled);
+        if (!configuration.CombatMovementEnabled)
+        {
+            SettingsRow.Note(Loc.T(L.Humanizer.CombatMovementOff));
+            return;
+        }
+
+        ResolveLabels(delayLevelNames, delayLabels);
+        ResolveLabels(roomLevelNames, roomLabels);
+        var controlWidth = SettingsControls.ComboRangeWidth();
+
+        SettingsRow.Draw(Loc.T(L.Humanizer.DodgeDelay),
+            Loc.T(L.Humanizer.DodgeDelayHelp),
+            controlWidth,
+            () => SettingsControls.DrawComboRange(configuration, "##aht_human_dodge_min", "##aht_human_dodge_max", delayLabels,
+                () => configuration.DodgeDelayMinLevel, value => configuration.DodgeDelayMinLevel = value,
+                () => configuration.DodgeDelayMaxLevel, value => configuration.DodgeDelayMaxLevel = value));
+
+        SettingsRow.Draw(Loc.T(L.Humanizer.MoveDelay),
+            Loc.T(L.Humanizer.MoveDelayHelp),
+            controlWidth,
+            () => SettingsControls.DrawComboRange(configuration, "##aht_human_move_min", "##aht_human_move_max", delayLabels,
+                () => configuration.MovementDelayMinLevel, value => configuration.MovementDelayMinLevel = value,
+                () => configuration.MovementDelayMaxLevel, value => configuration.MovementDelayMaxLevel = value));
+
+        SettingsRow.Draw(Loc.T(L.Humanizer.DangerRoom),
+            Loc.T(L.Humanizer.DangerRoomHelp),
+            controlWidth,
+            () => SettingsControls.DrawComboRange(configuration, "##aht_human_room_min", "##aht_human_room_max", roomLabels,
+                () => configuration.DangerRoomMinLevel, value => configuration.DangerRoomMinLevel = value,
+                () => configuration.DangerRoomMaxLevel, value => configuration.DangerRoomMaxLevel = value));
+
+        var missing = PresetMissingMovementModule();
+        if (missing >= 0)
+        {
+            SettingsRow.Note(missingModuleNote.Get(missing, static index => Loc.T(L.Humanizer.CombatMovementNoModule, HuntCombatPreset.Names[index])), Styling.AccentAmber);
+        }
+    }
+
+    // The catalog hands back cached strings, so refilling the label buffers every frame allocates nothing.
+    private static void ResolveLabels(LocString[] names, string[] labels)
+    {
+        for (var index = 0; index < names.Length; index++)
+        {
+            labels[index] = Loc.T(names[index]);
+        }
+    }
+
+    // The first bundled preset without the module, or -1 when each has it or the combat plugin did not answer.
+    private static int PresetMissingMovementModule()
+    {
+        var now = Environment.TickCount64;
+        if (now < moduleCheckAtMs)
+        {
+            return presetMissingModule;
+        }
+
+        moduleCheckAtMs = now + ModuleCheckIntervalMs;
+        presetMissingModule = -1;
+        var presets = HuntCombatPreset.Names;
+        for (var presetIndex = 0; presetIndex < presets.Length; presetIndex++)
+        {
+            if (DodgeTuning.PresetHasMovementModule(presets[presetIndex]) == false)
+            {
+                presetMissingModule = presetIndex;
+                break;
+            }
+        }
+
+        return presetMissingModule;
     }
 
     // In unscaled units, as SettingsRow scales the control width itself.
