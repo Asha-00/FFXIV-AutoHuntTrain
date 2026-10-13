@@ -506,7 +506,10 @@ internal sealed partial class AutoRide : AutoCommon
         }
 
         Diag($"Ride: late join, the flag {Conductor.Describe(conductor)} posted {age.TotalSeconds:F0}s ago in {TerritoryNames.Of(latest.TerritoryId)} is followed first");
-        pending = latest;
+        // A call heard on the journey meets this flag here, as it would a flag heard live; left unsettled, it would cut
+        // the leg short the moment it moved off.
+        pending = WithRequestedInstance(latest);
+        NoteFlagAgainstInstanceRequest(latest, pending);
         hasPending = true;
     }
 
