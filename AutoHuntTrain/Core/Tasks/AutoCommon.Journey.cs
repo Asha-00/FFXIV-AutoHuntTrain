@@ -452,6 +452,14 @@ public abstract partial class AutoCommon
                 return false;
             }
 
+            // Getting to the aetheryte takes a while, and a late switch from an earlier attempt or a cut-short run can
+            // land meanwhile; Lifestream is never asked to switch to the instance the character is already in.
+            if (lifestream.CurrentInstance() == instance)
+            {
+                Diag($"{scope}: in instance {instance} of {zoneName} by the time the aetheryte was reached; nothing more to do");
+                return true;
+            }
+
             Status = $"Switching to instance {instance}";
             Diag($"{scope}: asking Lifestream to switch from instance {lifestream.CurrentInstance()} to {instance} of {zoneName} ({ConditionTag()})");
             lifestream.ChangeInstance(instance);
@@ -494,16 +502,29 @@ public abstract partial class AutoCommon
             return false;
         }
 
-        if (FindNearestAetheryteObject() is not { } aetheryte)
+        Vector3 aetherytePosition;
+        if (FindNearestAetheryteObject() is { } aetheryte)
         {
-            Warn($"{scope}: no aetheryte in sight to switch instances at ({ConditionTag()})");
-            Svc.Chat.PrintError($"{AhtConstants.LogPrefix} No aetheryte nearby to switch instances at.");
+            aetherytePosition = aetheryte.Position;
+        }
+        else if (await TeleportForInstanceSwitch(scope) is { } landedAt)
+        {
+            // The teleport can land inside Lifestream's reach of the aetheryte, and then there is nothing to walk.
+            if (lifestream.CanChangeInstance() || await WaitUntilTimed(lifestream.CanChangeInstance, InstanceSwitcherSettleMs, $"{scope}-teleport-settle"))
+            {
+                return true;
+            }
+
+            aetherytePosition = landedAt;
+        }
+        else
+        {
             return false;
         }
 
         Status = "Walking to the aetheryte";
-        Diag($"{scope}: walking {DistanceTo(aetheryte.Position):F0}m to the aetheryte to switch instances");
-        if (!await TravelTo(Svc.ClientState.TerritoryType, aetheryte.Position, InstanceAetheryteReachMeters))
+        Diag($"{scope}: walking {DistanceTo(aetherytePosition):F0}m to the aetheryte to switch instances");
+        if (!await TravelTo(Svc.ClientState.TerritoryType, aetherytePosition, InstanceAetheryteReachMeters))
         {
             if (!CancelToken.IsCancellationRequested)
             {
@@ -520,11 +541,38 @@ public abstract partial class AutoCommon
 
         if (!CancelToken.IsCancellationRequested)
         {
-            Warn($"{scope}: Lifestream will not switch instances here ({DistanceTo(aetheryte.Position):F0}m from the aetheryte, {ConditionTag()}); its instance switcher may be disabled in its settings");
+            Warn($"{scope}: Lifestream will not switch instances here ({DistanceTo(aetherytePosition):F0}m from the aetheryte, {ConditionTag()}); its instance switcher may be disabled in its settings");
             Svc.Chat.PrintError($"{AhtConstants.LogPrefix} Lifestream will not switch instances here. Enable its instance switcher in Lifestream's settings (/li) and try again.");
         }
 
         return false;
+    }
+
+    // Out of sight of every aetheryte, the attuned one nearest the character is teleported to instead. Where it landed,
+    // or null when there is none or the teleport failed.
+    private async Task<Vector3?> TeleportForInstanceSwitch(string scope)
+    {
+        var territoryId = Svc.ClientState.TerritoryType;
+        var zoneName = TerritoryNames.Of(territoryId);
+        if (Svc.Objects.LocalPlayer is not { } player || !ZoneAetherytes.TryFindNearest(territoryId, player.Position, out var aetheryte))
+        {
+            Warn($"{scope}: no aetheryte in sight and none attuned in {zoneName} to switch instances at ({ConditionTag()})");
+            Svc.Chat.PrintError($"{AhtConstants.LogPrefix} No aetheryte nearby to switch instances at.");
+            return null;
+        }
+
+        Diag($"{scope}: no aetheryte in sight; teleporting to {aetheryte.Name}, the attuned one nearest in {zoneName}, to switch instances");
+        if (await TeleportToAetheryte(territoryId, aetheryte, $"{scope}-teleport"))
+        {
+            return aetheryte.Position;
+        }
+
+        if (!CancelToken.IsCancellationRequested)
+        {
+            Warn($"{scope}: the teleport to {aetheryte.Name} for the instance switch did not go through ({ConditionTag()})");
+        }
+
+        return null;
     }
 
     private static bool InInstance(int instance)

@@ -10,7 +10,7 @@ using Lumina.Excel.Sheets;
 namespace AutoHuntTrain.Core.Train;
 
 // One map flag heard in chat. World X and Z come straight from the link; the height is unknown until the zone's mesh
-// is asked. Instance is 0 when the text named none.
+// is asked. Instance is 0 when neither the text nor the link named one, and InstanceFromLink says only the link did.
 public readonly record struct FlagPost(
     DateTime PostedAtUtc,
     string SenderName,
@@ -23,6 +23,7 @@ public readonly record struct FlagPost(
     float MapX,
     float MapY,
     int Instance,
+    bool InstanceFromLink,
     string Message)
 {
     // Conductors post each flag twice within a moment, in Shout and in Yell for one; a copy lands within half a map
@@ -31,6 +32,8 @@ public readonly record struct FlagPost(
     private static readonly TimeSpan RepeatWindow = TimeSpan.FromSeconds(90);
 
     public bool NamesInstance => Instance > 0;
+
+    public bool NamesInstanceInText => NamesInstance && !InstanceFromLink;
 
     public bool Repeats(in FlagPost earlier)
         => TerritoryId == earlier.TerritoryId
@@ -163,16 +166,57 @@ internal sealed class FlagListener : IDisposable
         }
 
         var text = message.Message.TextValue;
+        var territoryId = link.TerritoryType.RowId;
         var hint = InstanceHints.Parse(text);
-        var instance = hint.Same ? LastInstanceNamedBy(name, worldId) : hint.Number;
+        var instance = ResolveInstance(hint, name, worldId, territoryId, out var fromLink);
         var post = new FlagPost(
             DateTime.UtcNow, name, worldId, chatType,
-            link.TerritoryType.RowId, link.Map.RowId,
+            territoryId, link.Map.RowId,
             link.RawX / RawCoordinateScale, link.RawY / RawCoordinateScale,
-            link.XCoord, link.YCoord, instance, text);
+            link.XCoord, link.YCoord, instance, fromLink, text);
         Push(post);
-        RunLog.Debug($"Flag heard: {name}@{worldId} in {TerritoryNames.Of(post.TerritoryId)} at ({post.MapX:F1}, {post.MapY:F1}), instance {instance}, via {chatType}");
+        RunLog.Debug($"Flag heard: {name}@{worldId} in {TerritoryNames.Of(post.TerritoryId)} at ({post.MapX:F1}, {post.MapY:F1}), instance {instance} ({InstanceSourceText(hint, instance, fromLink)}), via {chatType}");
         Posted?.Invoke(post);
+    }
+
+    // Text naming the instance wins, then "same" for the one the poster last named. The link's glyph is only where the
+    // poster stood, so it comes last, and only for a flag in the zone the listener is in: Shout, Yell and Say never
+    // cross zones, so a flag for another zone was posted by someone not standing in it.
+    private int ResolveInstance(in InstanceHint hint, string name, uint worldId, uint territoryId, out bool fromLink)
+    {
+        fromLink = false;
+        if (hint.NamesNumber)
+        {
+            return hint.Number;
+        }
+
+        if (hint.Same && LastInstanceNamedBy(name, worldId) is > 0 and var last)
+        {
+            return last;
+        }
+
+        if (hint.Linked == 0 || territoryId != Svc.ClientState.TerritoryType)
+        {
+            return 0;
+        }
+
+        fromLink = true;
+        return hint.Linked;
+    }
+
+    private static string InstanceSourceText(in InstanceHint hint, int instance, bool fromLink)
+    {
+        if (fromLink)
+        {
+            return "from the map link";
+        }
+
+        if (instance == 0)
+        {
+            return hint.Linked > 0 ? $"the link's instance {hint.Linked} ignored for a flag in another zone" : "none named";
+        }
+
+        return hint.Linked > 0 && hint.Linked != instance ? $"from the text, over the link's instance {hint.Linked}" : "from the text";
     }
 
     private void RelaySpoken(IHandleableChatMessage message, XivChatType chatType)
