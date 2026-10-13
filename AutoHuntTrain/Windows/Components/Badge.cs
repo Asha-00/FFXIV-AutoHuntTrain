@@ -9,6 +9,14 @@ internal static class Badge
     private const float PadX = 7f;
     private const float PadY = 2f;
 
+    public static float Height()
+    {
+        using (Fonts.PushCaption())
+        {
+            return ImGui.GetTextLineHeight() + PadY * 2f * ImGuiHelpers.GlobalScale;
+        }
+    }
+
     public static float DrawLeft(ImDrawListPtr drawList, string label, Vector4 color, float leftX, float midY)
     {
         float width;
