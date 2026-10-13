@@ -20,6 +20,7 @@ internal static partial class L
         public static readonly LocPlural InMinutes = new("feed.time.inMinutes", "in {0} minute", "in {0} minutes");
         public static readonly LocPlural StartedAgo = new("feed.time.startedAgo", "started {0} minute ago", "started {0} minutes ago");
         public static readonly LocString StartingNow = new("feed.time.startingNow", "starting now");
+        public static readonly LocPlural ReportedAgo = new("feed.time.reportedAgo", "reported {0} minute ago", "reported {0} minutes ago");
         public static readonly LocString ReachSameWorld = new("feed.reach.sameWorld", "This world");
         public static readonly LocString ReachSameDataCenter = new("feed.reach.sameDataCenter", "Same data center");
         public static readonly LocString ReachCrossDataCenter = new("feed.reach.crossDataCenter", "Other data center");
@@ -32,6 +33,8 @@ internal static partial class L
         public static readonly LocString Ride = new("feed.ride", "Ride");
         public static readonly LocString RideHint = new("feed.rideHint", "Travel to the start of this train and follow it");
         public static readonly LocString RideCatchUpHint = new("feed.rideCatchUpHint", "The train has moved on from its start; the ride catches up with it");
+        public static readonly LocString SHunt = new("feed.sHunt", "S-Hunt");
+        public static readonly LocString SHuntHint = new("feed.sHuntHint", "Travel to this S rank, wait for another player to pull, then join the fight");
         public static readonly LocString AutoMarker = new("feed.autoMarker", "Auto");
         public static readonly LocString InProgress = new("feed.inProgress", "In progress");
 
@@ -39,6 +42,7 @@ internal static partial class L
         public static readonly LocString VerdictInDuty = new("feed.verdict.inDuty", "Leave the duty or its queue first");
         public static readonly LocString VerdictLifestreamBusy = new("feed.verdict.lifestreamBusy", "Lifestream is busy with something else");
         public static readonly LocString VerdictRideRunning = new("feed.verdict.rideRunning", "A ride is already running");
+        public static readonly LocString VerdictSRankCrossDataCenter = new("feed.verdict.sRankCrossDataCenter", "S-Hunts can visit another world on this data center, but not another data center");
         public static readonly LocString VerdictFeedWorldUnknown = new("feed.verdict.feedWorldUnknown", "The announced world is not one this client knows");
 
         public static readonly LocString PhaseJourney = new("feed.phase.journey", "Travelling to the train");

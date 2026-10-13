@@ -34,6 +34,14 @@ internal sealed class TrainChatAlert : IDisposable
 
     private void OnAnnounced(Announcement announcement)
     {
+        // The existing chat-alert preference describes announced trains. Do not duplicate HuntAlerts' S-rank chat or
+        // imply that the one-off hunt will auto-start; S ranks remain visible and manually actionable in the feed.
+        if (announcement.IsSRank)
+        {
+            RunLog.Debug($"Chat alert: S rank on {announcement.World.Name} is not posted by the train chat alert");
+            return;
+        }
+
         var configuration = Plugin.Instance.Configuration;
         if (!configuration.ChatAlert)
         {

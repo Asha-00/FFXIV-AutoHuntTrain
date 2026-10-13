@@ -229,7 +229,11 @@ internal sealed partial class AutoHuntController
         for (var index = 0; index < feed.Count; index++)
         {
             var announcement = feed[index];
-            if (announcement.Id == lastRiddenAnnouncementId || announcement.LeadAt(nowUtc) > NextTrainWindow)
+            // S ranks are manual one-off hunts. They must never make a completed run stay on another world waiting for
+            // train auto-join, even when their compatibility StartAtUtc falls inside the next-train window.
+            if (!announcement.IsTrain
+                || announcement.Id == lastRiddenAnnouncementId
+                || announcement.LeadAt(nowUtc) > NextTrainWindow)
             {
                 continue;
             }
@@ -283,6 +287,7 @@ internal sealed partial class AutoHuntController
                 DataCenterName = ending.DataCenterName,
                 Expansion = ending.Expansion,
                 Group = ending.Group ?? (ending.Expansion is { } kind ? ExpansionGroups.FromExpansionKind(kind) : null),
+                IsSRank = ending.IsSRank,
                 CrossedDataCenter = ending.CrossedDataCenter,
                 Outcome = outcome,
                 MarksCredited = ending.MarksCredited,

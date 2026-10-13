@@ -12,8 +12,9 @@ using System.Numerics;
 
 namespace AutoHuntTrain.Windows.Sections;
 
-// The train's actions, flowing onto a new line when the card is narrow: Ride with the same rules and refusal as the
-// list, the map flag, the Party Finder, the on-screen arrow, and a relay to chat with a picker for a one-off channel.
+// The announcement's actions, flowing onto a new line when the card is narrow: Ride or S-Hunt with the same rules and
+// refusal as the list, the map flag, the Party Finder, the on-screen arrow, and a relay to chat with a picker for a
+// one-off channel.
 internal sealed partial class TrainDetails
 {
     private const float ActionHeight = 30f;
@@ -44,14 +45,16 @@ internal sealed partial class TrainDetails
         RefreshVerdict(announcement);
 
         var rideable = verdict == RideVerdict.Rideable;
-        var rideLabel = Loc.T(L.Feed.Ride);
-        var rideOrigin = Place(ref cursor, PillButton.Width(rideLabel, FontAwesomeIcon.Train), left, right, height, gap);
+        var rideLabel = Loc.T(announcement.IsSRank ? L.Feed.SHunt : L.Feed.Ride);
+        var rideIcon = announcement.IsSRank ? FontAwesomeIcon.Crosshairs : FontAwesomeIcon.Train;
+        var rideWidth = PillButton.Width(rideLabel, rideIcon);
+        var rideOrigin = Place(ref cursor, rideWidth, left, right, height, gap);
         if (PillButton.Draw(RideId, rideLabel, Styling.AccentMint, rideable ? PillButton.Emphasis.Filled : PillButton.Emphasis.Ghost,
-            FontAwesomeIcon.Train, rideable, ActionHeight, rideable ? TrainTexts.RideHint(catchesUp) : null))
+            rideIcon, rideable, ActionHeight, rideable ? TrainTexts.RideHint(announcement, catchesUp) : null))
         {
-            plugin.Controller.StartRide(announcement);
+            plugin.Controller.StartAnnouncement(announcement);
         }
-        else if (!rideable && Hit.HoveringRect(rideOrigin, rideOrigin + new Vector2(PillButton.Width(rideLabel, FontAwesomeIcon.Train), height)))
+        else if (!rideable && Hit.HoveringRect(rideOrigin, rideOrigin + new Vector2(rideWidth, height)))
         {
             Tooltip.Show(TrainTexts.Verdict(verdict));
         }
@@ -60,10 +63,11 @@ internal sealed partial class TrainDetails
         {
             var flagLabel = Loc.T(L.Details.Flag);
             Place(ref cursor, PillButton.Width(flagLabel, FontAwesomeIcon.MapMarkerAlt), left, right, height, gap);
-            if (PillButton.Draw(FlagId, flagLabel, Styling.AccentBlue, PillButton.Emphasis.Tinted, FontAwesomeIcon.MapMarkerAlt, height: ActionHeight, tooltip: Loc.T(L.Details.FlagHint))
+            var flagHint = Loc.T(announcement.IsSRank ? L.Details.FlagHintSRank : L.Details.FlagHint);
+            if (PillButton.Draw(FlagId, flagLabel, Styling.AccentBlue, PillButton.Emphasis.Tinted, FontAwesomeIcon.MapMarkerAlt, height: ActionHeight, tooltip: flagHint)
                 && !MapFlag.TryOpenMap(announcement.TerritoryId, flagPoint))
             {
-                RunLog.Warning($"Details: the map could not be opened on the train's start in {TerritoryNames.Of(announcement.TerritoryId)}");
+                RunLog.Warning($"Details: the map could not be opened on the announced location in {TerritoryNames.Of(announcement.TerritoryId)}");
             }
         }
 
@@ -134,7 +138,8 @@ internal sealed partial class TrainDetails
         var pickerSize = height;
         Place(ref cursor, relayWidth + PickerGap * ImGuiHelpers.GlobalScale + pickerSize, left, right, height, gap);
         var origin = ImGui.GetCursorScreenPos();
-        if (PillButton.Draw(RelayId, label, Styling.AccentNebula, PillButton.Emphasis.Tinted, FontAwesomeIcon.Bullhorn, height: ActionHeight, tooltip: RelayHint(configuration.RelayChannel)))
+        if (PillButton.Draw(RelayId, label, Styling.AccentNebula, PillButton.Emphasis.Tinted, FontAwesomeIcon.Bullhorn, height: ActionHeight,
+            tooltip: RelayHint(announcement, configuration.RelayChannel)))
         {
             TrainRelay.Send(announcement, configuration.RelayChannel, configuration.RelayWithFlag);
         }
@@ -189,13 +194,15 @@ internal sealed partial class TrainDetails
         catchesUp = TrainTexts.CatchesUp(announcement, DateTime.UtcNow);
     }
 
-    private string RelayHint(RelayChannel channel)
+    private string RelayHint(in Announcement announcement, RelayChannel channel)
     {
-        if (relayHint.TryGet((long)channel, out var text))
+        var key = HashCode.Combine(announcement.IsSRank, channel);
+        if (relayHint.TryGet(key, out var text))
         {
             return text;
         }
 
-        return relayHint.Set((long)channel, Loc.T(L.Details.RelayHint, RelayChannelLabels.Of(channel)));
+        var hint = announcement.IsSRank ? L.Details.RelayHintSRank : L.Details.RelayHint;
+        return relayHint.Set(key, Loc.T(hint, RelayChannelLabels.Of(channel)));
     }
 }

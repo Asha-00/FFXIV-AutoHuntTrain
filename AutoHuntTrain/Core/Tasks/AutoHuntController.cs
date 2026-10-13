@@ -144,6 +144,7 @@ internal sealed partial class AutoHuntController
         {
             WorldName = world.Name,
             DataCenterName = world.DataCenterName,
+            Kind = announcement.Kind,
             Group = announcement.Group,
             Expansion = ExpansionGroups.ToExpansionKind(announcement.Group) ?? (announcement.NamesTerritory ? AutoRide.ExpansionOf(announcement.TerritoryId) : null),
         };
