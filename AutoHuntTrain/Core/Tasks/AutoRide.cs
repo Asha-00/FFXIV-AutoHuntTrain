@@ -1047,5 +1047,5 @@ internal sealed partial class AutoRide : AutoCommon
     private static string PullText(in ZoneMarkSighting mark) => mark.Pulled ? "already pulled" : "not pulled yet";
 
     private static string InstanceText(in FlagPost flag)
-        => flag.NamesInstance ? $" instance {flag.Instance}" : string.Empty;
+        => flag.NamesInstance ? $" instance {flag.Instance}{(flag.InstanceFromLink ? " from the map link" : string.Empty)}" : string.Empty;
 }
