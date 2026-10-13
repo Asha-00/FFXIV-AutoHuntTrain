@@ -24,8 +24,8 @@ public abstract partial class AutoCommon
     private const int SRankPullTimeoutMs = 10 * TimeUnits.MillisecondsPerMinute;
     private const int SRankScanPollMs = 250;
 
-    // Locates only the exact announced S rank. Reported coordinates provide optional context, while the live actor
-    // supplies the staging position, exact identity and pull state.
+    // Locates only the exact announced S rank, at the reported point or else at its known spawn points; the live actor
+    // then supplies the staging position, exact identity and pull state.
     private protected async Task<MarkOutcome> HuntSRank(
         uint nameId,
         uint territoryId,
@@ -46,9 +46,9 @@ public abstract partial class AutoCommon
         var name = HuntMarkRegistry.NameOf(nameId);
         Status = $"Searching for {name}";
 
-        // S ranks are visible throughout their zone. Use the exact live actor to obtain a trustworthy elevation and
-        // construct a destination beside it; the rounded relay point is retained only as context and a direction fallback.
-        var sighting = await WaitForExactSRank(nameId, name, SRankSearchTimeoutMs);
+        // A mark enters the object table only near the player, so the search sweeps toward it and stops the moment the
+        // exact live actor comes into view; staging then works from the actor, never from the rounded relay point.
+        var sighting = await LocateSRank(nameId, name, territoryId, reportedPoint);
         if (sighting is null)
         {
             return CancelToken.IsCancellationRequested ? MarkOutcome.Cancelled : MarkOutcome.NotFound;
@@ -203,16 +203,37 @@ public abstract partial class AutoCommon
             out _);
     }
 
-    private async Task<MarkSighting?> WaitForExactSRank(uint nameId, string name, int timeoutMs, string searchContext = "at the reported location")
+    // Each sweep leg stops as soon as the mark comes into view, so the character never closes on an untouched S rank.
+    private async Task<MarkSighting?> LocateSRank(uint nameId, string name, uint territoryId, Vector3? reportedPoint)
     {
-        MarkPhase = HuntPhase.Searching;
-        Status = $"Searching for {name} {searchContext}";
-        var deadline = Environment.TickCount64 + timeoutMs;
-        while (Environment.TickCount64 < deadline)
+        if (TryFindExactSRank(nameId, out var inView))
         {
-            if (CancelToken.IsCancellationRequested)
+            Diag($"S rank: {name} already in view {inView.DistanceToHitbox:F0}m away at {FormatPosition(inView.Position)}");
+            return inView;
+        }
+
+        var hunt = MarkHuntContext.ForTrainMark(nameId, name, territoryId, SRankSearchPoints(nameId, territoryId, reportedPoint));
+        var points = ResolveMarkPoints(hunt);
+        if (points.Length == 0)
+        {
+            Warn($"S rank: no reported point and no known spawn point with a floor for {name} in {hunt.ZoneName}");
+            return null;
+        }
+
+        var order = new int[points.Length];
+        OrderMarkPoints(points, order, Svc.Objects.LocalPlayer?.Position ?? points[0]);
+        var deadline = Environment.TickCount64 + SRankSearchTimeoutMs;
+        for (var orderIndex = 0; orderIndex < order.Length; orderIndex++)
+        {
+            if (CancelToken.IsCancellationRequested || Environment.TickCount64 >= deadline)
             {
-                return null;
+                break;
+            }
+
+            var leg = await SweepToMarkPoint(hunt, points[order[orderIndex]], $"s-rank-point{orderIndex + 1}/{order.Length}");
+            if (leg == MarkLeg.Arrived)
+            {
+                await DwellAtMarkPoint(hunt);
             }
 
             if (TryFindExactSRank(nameId, out var sighting))
@@ -220,13 +241,22 @@ public abstract partial class AutoCommon
                 Diag($"S rank: {name} sighted {sighting.DistanceToHitbox:F0}m away at {FormatPosition(sighting.Position)}");
                 return sighting;
             }
-
-            await DelayMs(SRankScanPollMs);
         }
 
-        Diag($"S rank: {name} was not found {searchContext} within {timeoutMs / TimeUnits.MillisecondsPerMinute} minutes");
+        if (!CancelToken.IsCancellationRequested)
+        {
+            Diag($"S rank: {name} did not come into view while sweeping {points.Length} point(s) in {hunt.ZoneName}");
+        }
+
         return null;
     }
+
+    // The reported point carries no real height, so it is snapped like a conductor's flag. A relay without one falls back
+    // to every spawn point of the mark's rank in its zone.
+    private static Vector3[] SRankSearchPoints(uint nameId, uint territoryId, Vector3? reportedPoint)
+        => reportedPoint is { } point
+            ? [point with { Y = float.NaN }]
+            : HuntSpawns.Merge(nameId, territoryId, []);
 
     // S ranks always wait for an external pull, regardless of the train WaitForPull setting. Combat remains inactive
     // until the live target has lost HP or the game marks it in combat.

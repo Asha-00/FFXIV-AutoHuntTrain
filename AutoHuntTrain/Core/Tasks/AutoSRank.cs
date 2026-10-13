@@ -8,9 +8,10 @@ using System.Threading.Tasks;
 
 namespace AutoHuntTrain.Core.Tasks;
 
-// Rides one HuntAlerts S-rank relay: travel to its world, aetheryte and instance; locate and stage safely near
-// the exact live creature; wait for another player to pull it; join that fight; then end after credit is settled.
-// There is deliberately no conductor, flag listener, catch-up route or fallback sweep over known spawn points.
+// Rides one HuntAlerts S-rank relay: travel to its world, aetheryte and instance; sweep toward the reported point, or
+// the mark's known spawn points when the relay gives none, until the exact live creature is in view; stage safely near
+// it; wait for another player to pull it; join that fight; then end after credit is settled. There is deliberately no
+// conductor, flag listener or catch-up route.
 internal sealed class AutoSRank : AutoCommon
 {
     private const string Scope = "s-rank";
@@ -59,7 +60,7 @@ internal sealed class AutoSRank : AutoCommon
             Diag(
                 reportedPoint is null
                     ? $"S rank: the relay has no coordinates; " +
-                      $"resolving {creature}'s live position after arrival in " +
+                      $"sweeping {creature}'s known spawn points in " +
                       $"{TerritoryNames.Of(announcement.TerritoryId)} " +
                       $"(BNpcName {nameId})"
                     : $"S rank: searching the reported location in " +
@@ -212,7 +213,7 @@ internal sealed class AutoSRank : AutoCommon
 
     private static string Describe(MarkOutcome outcome) => outcome switch
     {
-        MarkOutcome.NotFound => "the mark was not found in the announced zone or at the reported location",
+        MarkOutcome.NotFound => "the mark was not found at the reported location or its known spawn points",
         MarkOutcome.Died => "the character died",
         MarkOutcome.Unsupported => "the mark or territory is unsupported",
         MarkOutcome.Unreachable => "the reported location could not be reached",
