@@ -1,3 +1,4 @@
+using AutoHuntTrain.Core.Game;
 using AutoHuntTrain.Core.Localization;
 using AutoHuntTrain.Windows.Components;
 using Dalamud.Bindings.ImGui;
@@ -9,7 +10,7 @@ internal static class PartySettings
 {
     private const float TextInputWidth = 360f;
     // The chat box refuses a line longer than 500 bytes, and "/shout " takes a few of them.
-    private const int TextMaxLength = 480;
+    private const int ShoutMaxLength = 480;
 
     public static void Draw(Configuration configuration)
     {
@@ -33,7 +34,23 @@ internal static class PartySettings
             {
                 SettingsRow.DrawBlock(Loc.T(L.Safety.LookingForGroupText),
                     Loc.T(L.Safety.LookingForGroupTextHelp),
-                    () => DrawTextInput(configuration));
+                    () => DrawShoutInput(configuration));
+            }
+        }
+
+        SettingsRow.Draw(Loc.T(L.Safety.PartyFinderListing),
+            Loc.T(L.Safety.PartyFinderListingHelp),
+            SettingsControls.ToggleWidth,
+            () => SettingsControls.DrawToggle(configuration, () => configuration.CreatePartyFinderListing, value => configuration.CreatePartyFinderListing = value, "##aht_party_pf"),
+            SettingsRow.ToggleHeight);
+
+        using (var comment = Motion.PushSection("##aht_party_pf_comment", configuration.CreatePartyFinderListing))
+        {
+            if (comment is not null)
+            {
+                SettingsRow.DrawBlock(Loc.T(L.Safety.PartyFinderComment),
+                    Loc.T(L.Safety.PartyFinderCommentHelp),
+                    () => DrawCommentInput(configuration));
             }
         }
 
@@ -44,22 +61,36 @@ internal static class PartySettings
             SettingsRow.ToggleHeight);
     }
 
-    private static void DrawTextInput(Configuration configuration)
+    private static void DrawShoutInput(Configuration configuration)
     {
         var text = configuration.LookingForGroupText;
-        bool edited;
-        ImGui.SetNextItemWidth(TextInputWidth * ImGuiHelpers.GlobalScale);
-        using (SettingsControls.PushFrameColors())
-        {
-            edited = ImGui.InputText("##aht_party_lfg_input", ref text, TextMaxLength);
-        }
-
-        if (!edited)
+        if (!DrawTextInput("##aht_party_lfg_input", ref text, ShoutMaxLength))
         {
             return;
         }
 
         configuration.LookingForGroupText = text;
         configuration.SaveDebounced();
+    }
+
+    private static void DrawCommentInput(Configuration configuration)
+    {
+        var text = configuration.PartyFinderComment ?? string.Empty;
+        if (!DrawTextInput("##aht_party_pf_comment_input", ref text, PartyFinderListing.CommentMaxBytes))
+        {
+            return;
+        }
+
+        configuration.PartyFinderComment = text;
+        configuration.SaveDebounced();
+    }
+
+    private static bool DrawTextInput(string id, ref string text, int maxLength)
+    {
+        ImGui.SetNextItemWidth(TextInputWidth * ImGuiHelpers.GlobalScale);
+        using (SettingsControls.PushFrameColors())
+        {
+            return ImGui.InputText(id, ref text, maxLength);
+        }
     }
 }

@@ -169,7 +169,7 @@ internal sealed partial class AutoHuntController
     }
 
     // A GM nearby ends the ride as stopped, whatever it was about to become, and nothing runs after it: no leaving the
-    // party, no way home, no after-run action.
+    // party, no ending the Party Finder listing, no way home, no after-run action.
     public void StopForAlert()
     {
         if (session is { Recorded: false } live)
@@ -177,7 +177,7 @@ internal sealed partial class AutoHuntController
             live.Outcome = RideOutcome.Stopped;
         }
 
-        Stop();
+        Stop(endListing: false);
         // A GM nearby is the player's call to make; auto-join must not start the next train a second later.
         var configuration = Plugin.Instance.Configuration;
         if (!configuration.IsAutoJoinActive())
@@ -191,7 +191,9 @@ internal sealed partial class AutoHuntController
         ECommons.DalamudServices.Svc.Chat.Print($"{AhtConstants.LogPrefix} Auto-join is off after the GM alert; turn it back on in Settings when you are ready.");
     }
 
-    public void Stop()
+    public void Stop() => Stop(endListing: true);
+
+    private void Stop(bool endListing)
     {
         var ending = session;
         var wasPaused = Paused;
@@ -204,6 +206,7 @@ internal sealed partial class AutoHuntController
             ending.Outcome ??= RideOutcome.Stopped;
             ReleaseHelpers();
             AbandonTravel();
+            SettleListingOnStop(endListing);
         }
 
         // Pause already credited the run, and anything done since was the player's own play.
@@ -271,6 +274,22 @@ internal sealed partial class AutoHuntController
     }
 
     private bool CanRestart() => rideTaskFactory is not null;
+
+    private static void SettleListingOnStop(bool endListing)
+    {
+        var listing = Plugin.Instance.PartyFinderListing;
+        if (endListing)
+        {
+            listing.RequestEnd("the ride was stopped");
+            return;
+        }
+
+        listing.Withdraw("a GM alert stopped the ride");
+        if (listing.ListingUp)
+        {
+            Diag("GM alert: a Party Finder listing is up and is left for the player to end.");
+        }
+    }
 
     // A stopped ride is over for good: neither record may bring it back at the next login, and a transfer Lifestream
     // still has in hand would otherwise carry the character off after the Stop.

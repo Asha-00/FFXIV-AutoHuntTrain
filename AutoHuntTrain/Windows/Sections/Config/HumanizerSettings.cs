@@ -21,6 +21,7 @@ internal static class HumanizerSettings
         new(HumanAction.Engage, L.Humanizer.Engage, L.Humanizer.EngageHelp, "##aht_human_engage_min", "##aht_human_engage_max"),
         new(HumanAction.AcceptInvite, L.Humanizer.Invite, L.Humanizer.InviteHelp, "##aht_human_invite_min", "##aht_human_invite_max"),
         new(HumanAction.LookingForGroup, L.Humanizer.Shout, L.Humanizer.ShoutHelp, "##aht_human_shout_min", "##aht_human_shout_max"),
+        new(HumanAction.PartyFinder, L.Humanizer.PartyFinder, L.Humanizer.PartyFinderHelp, "##aht_human_partyfinder_min", "##aht_human_partyfinder_max"),
     ];
 
     public static void Draw(Configuration configuration)

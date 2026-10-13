@@ -32,6 +32,9 @@ public sealed class AutoHuntSession
 
     internal bool LookingForGroupPosted;
 
+    // Set once the ride has put up its Party Finder listing, or found it had no need of one, so a resume lists no more.
+    internal bool PartyFinderListingSettled;
+
     // When the last flag the ride finished with was posted, so a resume does not follow that flag a second time.
     internal DateTime LastSettledFlagAtUtc = DateTime.MinValue;
 

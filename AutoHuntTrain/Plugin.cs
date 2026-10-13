@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     internal TrainNotifier Notifier { get; }
     internal TrainChatAlert ChatAlert { get; }
     internal PartyFinderOpener PartyFinder { get; } = new();
+    internal PartyFinderListing PartyFinderListing { get; }
     internal DalamudLinkPayload OpenTrainLink { get; }
 
     private readonly DutyWatcher dutyWatcher;
@@ -96,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         dutyWatcher = new DutyWatcher();
         gmAlertWatcher = new GmAlertWatcher();
         partyInviteWatcher = new PartyInviteWatcher();
+        PartyFinderListing = new PartyFinderListing();
         Kills = new KillLedger();
 
         InitializeLocalization();
@@ -126,6 +128,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Controller.Stop();
+        PartyFinderListing.Dispose();
         TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
 
         PluginInterface.UiBuilder.Draw -= OnDraw;
@@ -280,6 +283,7 @@ public sealed class Plugin : IDalamudPlugin
         Feed.Tick();
         Notifier.Tick();
         PartyFinder.Tick();
+        PartyFinderListing.Tick();
         Controller.Tick();
     }
 

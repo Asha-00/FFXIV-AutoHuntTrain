@@ -30,6 +30,7 @@ internal static class Humanizer
         HumanAction.Teleport => "casting the teleport",
         HumanAction.Engage => "engaging",
         HumanAction.AcceptInvite => "accepting the invite",
+        HumanAction.PartyFinder => "putting up the Party Finder listing",
         _ => "the looking-for-group shout",
     };
 }

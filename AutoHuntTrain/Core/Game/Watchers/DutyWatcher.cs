@@ -53,7 +53,7 @@ internal sealed class DutyWatcher : IDisposable
         controller.Resume();
     }
 
-    private static bool InContent()
+    internal static bool InContent()
         => Svc.Condition[ConditionFlag.BoundByDuty]
         || Svc.Condition[ConditionFlag.BoundByDuty56]
         || Svc.Condition[ConditionFlag.BoundByDuty95];

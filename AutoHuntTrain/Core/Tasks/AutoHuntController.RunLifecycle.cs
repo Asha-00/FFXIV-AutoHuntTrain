@@ -64,6 +64,7 @@ internal sealed partial class AutoHuntController
         if (ReferenceEquals(session, owningSession))
         {
             Plugin.Instance.Configuration.ClearPendingRide();
+            Plugin.Instance.PartyFinderListing.RequestEnd("the ride ended");
         }
 
         FinalizeRun(owningSession, sample: true);
@@ -81,9 +82,9 @@ internal sealed partial class AutoHuntController
         }
     }
 
-    // One ordered chain once a ride ends on its own: leaving the train's party, the way home, then the after-run action.
-    // A Stop or a fault runs none of them. The finished run stays on screen while the chain runs, and is cleared once it
-    // ends.
+    // One ordered chain once a ride ends on its own: the end of its Party Finder listing, leaving the train's party, the
+    // way home, then the after-run action. A Stop or a fault runs none of them. The finished run stays on screen while
+    // the chain runs, and is cleared once it ends.
     private bool TryRunAfterAction(AutoHuntSession ending)
     {
         if (ending.AfterActionDispatched)
@@ -114,15 +115,21 @@ internal sealed partial class AutoHuntController
         }
 
         progress.SetPhase(HuntPhase.Finishing);
-        RunChain(leaveParty, wayHome, action);
+        RunChain(awaitListing: true, leaveParty, wayHome, action);
         return true;
     }
 
-    private void RunChain(bool leaveParty, bool wayHome, AfterRunAction? action)
+    private void RunChain(bool awaitListing, bool leaveParty, bool wayHome, AfterRunAction? action)
     {
+        if (awaitListing && Plugin.Instance.PartyFinderListing.Busy)
+        {
+            RunTask(new AutoEndListing(), () => RunChain(awaitListing: false, leaveParty, wayHome, action));
+            return;
+        }
+
         if (leaveParty)
         {
-            RunTask(new AutoLeaveParty(), () => RunChain(leaveParty: false, wayHome, action));
+            RunTask(new AutoLeaveParty(), () => RunChain(awaitListing: false, leaveParty: false, wayHome, action));
             return;
         }
 
@@ -132,7 +139,7 @@ internal sealed partial class AutoHuntController
             RunTask(new AutoWayHome(), () =>
             {
                 Diag("The way home finished.");
-                RunChain(leaveParty: false, wayHome: false, action);
+                RunChain(awaitListing: false, leaveParty: false, wayHome: false, action);
             });
             return;
         }

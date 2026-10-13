@@ -7,6 +7,7 @@ public enum HumanAction : byte
     Engage,
     AcceptInvite,
     LookingForGroup,
+    PartyFinder,
 }
 
 public readonly record struct DelayRange(float MinSeconds, float MaxSeconds);
@@ -35,12 +36,17 @@ public sealed partial class Configuration
 
     public float LookingForGroupDelayMaxSeconds { get; set; } = 6.0f;
 
+    public float PartyFinderDelayMinSeconds { get; set; } = 3.0f;
+
+    public float PartyFinderDelayMaxSeconds { get; set; } = 8.0f;
+
     public DelayRange DelayFor(HumanAction action) => action switch
     {
         HumanAction.MoveOff => new DelayRange(MoveOffDelayMinSeconds, MoveOffDelayMaxSeconds),
         HumanAction.Teleport => new DelayRange(TeleportDelayMinSeconds, TeleportDelayMaxSeconds),
         HumanAction.Engage => new DelayRange(EngageDelayMinSeconds, EngageDelayMaxSeconds),
         HumanAction.AcceptInvite => new DelayRange(InviteDelayMinSeconds, InviteDelayMaxSeconds),
+        HumanAction.PartyFinder => new DelayRange(PartyFinderDelayMinSeconds, PartyFinderDelayMaxSeconds),
         _ => new DelayRange(LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds),
     };
 
@@ -59,6 +65,9 @@ public sealed partial class Configuration
                 break;
             case HumanAction.AcceptInvite:
                 (InviteDelayMinSeconds, InviteDelayMaxSeconds) = range;
+                break;
+            case HumanAction.PartyFinder:
+                (PartyFinderDelayMinSeconds, PartyFinderDelayMaxSeconds) = range;
                 break;
             default:
                 (LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds) = range;
