@@ -115,7 +115,7 @@ internal readonly struct PromptTemplate
         for (var charIndex = 0; charIndex < text.Length; charIndex++)
         {
             var character = text[charIndex];
-            if (character is '\r' or '\n' or ' ' or '­')
+            if (character is '\r' or '\n' or '\u00A0' or '\u00AD')
             {
                 continue;
             }

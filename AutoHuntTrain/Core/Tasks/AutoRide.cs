@@ -73,6 +73,7 @@ internal sealed partial class AutoRide : AutoCommon
     private long nextUpkeepCheckAtMs;
     // The zone a party member's teleport, accepted during the ride, took the character into; spent by the next leg.
     private uint offeredTerritoryId;
+    private RideLeg? activeLeg;
 
     public AutoRide(AutoHuntSession session, RideProgress progress, FlagListener listener, Announcement? announcement = null)
     {
@@ -623,6 +624,9 @@ internal sealed partial class AutoRide : AutoCommon
         return territoryId != 0;
     }
 
+    // The one time a party member's teleport cannot cross the leg's own.
+    internal bool AwaitsTeleport => activeLeg is { AwaitsTeleport: true };
+
     internal void NoteTeleportOfferAccepted(uint territoryId) => offeredTerritoryId = territoryId;
 
     // The party picked the landing when its teleport brought the character into the flag's zone before the leg, so the
@@ -665,6 +669,7 @@ internal sealed partial class AutoRide : AutoCommon
         var completed = false;
         legFlag = flag;
         hasLegFlag = true;
+        activeLeg = leg;
         travelling = true;
         try
         {
@@ -679,6 +684,7 @@ internal sealed partial class AutoRide : AutoCommon
         {
             travelling = false;
             hasLegFlag = false;
+            activeLeg = null;
             // An offer taken during the leg brought it in already; it must not spare the next leg its shortcut.
             offeredTerritoryId = 0;
         }

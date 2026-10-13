@@ -47,7 +47,7 @@ public sealed partial class Configuration
         HumanAction.Engage => new DelayRange(EngageDelayMinSeconds, EngageDelayMaxSeconds),
         HumanAction.AcceptInvite => new DelayRange(InviteDelayMinSeconds, InviteDelayMaxSeconds),
         HumanAction.AcceptTeleport => new DelayRange(TeleportOfferDelayMinSeconds, TeleportOfferDelayMaxSeconds),
-        _ =>new DelayRange(LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds),
+        _ => new DelayRange(LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds),
     };
 
     public void SetDelay(HumanAction action, DelayRange range)

@@ -41,6 +41,9 @@ internal sealed class RideLeg(FlagPost flag, string label, bool alreadyBroughtIn
 
     public RideLegOutcome Outcome { get; private set; } = RideLegOutcome.Cancelled;
 
+    // Only while it waits for someone else's teleport: before the wait and after it the leg makes its own way.
+    public bool AwaitsTeleport { get; private set; }
+
     // The task runner swallows exceptions, so a leg that blew up would otherwise look like a quiet failure.
     public Exception? Fault { get; private set; }
 
@@ -110,7 +113,9 @@ internal sealed class RideLeg(FlagPost flag, string label, bool alreadyBroughtIn
     {
         if (Plugin.Instance.Configuration.FlagTeleportMode == FlagTeleportMode.WaitForTeleport)
         {
+            AwaitsTeleport = true;
             var waited = await WaitToBeBroughtIn(territoryId, zoneName);
+            AwaitsTeleport = false;
             if (waited != TeleportWaitOutcome.TeleportItself)
             {
                 return waited == TeleportWaitOutcome.BroughtIn;

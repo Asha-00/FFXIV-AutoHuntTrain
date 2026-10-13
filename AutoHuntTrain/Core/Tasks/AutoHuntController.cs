@@ -42,6 +42,8 @@ internal sealed partial class AutoHuntController
     // A party member's teleport is taken only by a flag ride under way: never by an S rank hunt or the chain after a ride.
     public bool OpenToTeleportOffers => OpenToParty && currentTask is AutoRide;
 
+    public bool RideAwaitsTeleport => currentTask is AutoRide { AwaitsTeleport: true };
+
     public RideProgress Progress => progress;
 
     public AutoHuntSession? SessionSnapshot => session;

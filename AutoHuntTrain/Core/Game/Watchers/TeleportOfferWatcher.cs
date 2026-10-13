@@ -81,7 +81,19 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
     private void OnSelectYesnoSetup(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)args.Addon.Address;
-        if (addon is null || offerAddonId != NoOffer || !Armed())
+        if (addon is null)
+        {
+            return;
+        }
+
+        // A prompt set up again under the held offer's id is another question now, and a held offer can wait a minute.
+        if (offerAddonId != NoOffer && addon->Id == offerAddonId)
+        {
+            RunLog.Info($"Teleport offer from {offerer}: its prompt was replaced before the ride answered it; standing down.");
+            offerAddonId = NoOffer;
+        }
+
+        if (offerAddonId != NoOffer || !Armed())
         {
             return;
         }
@@ -241,8 +253,9 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
             return OfferCall.HoldAtFlag;
         }
 
-        // A leg that teleports itself is already on its way; two teleports at once refuse each other.
-        if (phase == RidePhase.Travelling && Plugin.Instance.Configuration.FlagTeleportMode == FlagTeleportMode.TeleportMyself)
+        // A leg makes its own way unless it is waiting for someone else's teleport, and a wait that ran out is followed by
+        // the leg's own teleport; two teleports at once refuse each other.
+        if (phase == RidePhase.Travelling && !controller.RideAwaitsTeleport)
         {
             return OfferCall.HoldOwnTeleport;
         }
@@ -290,7 +303,7 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
     private static string Describe(OfferCall call) => call switch
     {
         OfferCall.HoldAtFlag => "the ride is at its flag, waiting for the mark or fighting it",
-        OfferCall.HoldOwnTeleport => "the ride is teleporting toward the flag itself",
+        OfferCall.HoldOwnTeleport => "the ride is making its own way toward the flag",
         OfferCall.HoldBusy => $"a fight, a cast or a zone change is under way ({AutoCommon.ConditionTag()})",
         OfferCall.LeaveClosed => "the ride is no longer open to teleport offers",
         OfferCall.LeaveJourney => "the ride is still on its way to the train",
