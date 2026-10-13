@@ -870,7 +870,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     private static bool PressButton(AtkUnitBase* addon, uint nodeId)
     {
         var button = addon->GetComponentButtonById(nodeId);
-        if (button is null || !button->IsEnabled || !button->AtkResNode->IsVisible())
+        if (button is null || !button->IsEnabled || button->AtkResNode is null || !button->AtkResNode->IsVisible())
         {
             return false;
         }
