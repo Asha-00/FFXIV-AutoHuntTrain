@@ -140,6 +140,17 @@ internal static partial class L
         public static readonly LocString OutcomeStopped = new("history.outcome.stopped", "Stopped");
         public static readonly LocString OutcomeAbandoned = new("history.outcome.abandoned", "Abandoned");
         public static readonly LocString OutcomeFaulted = new("history.outcome.faulted", "Error");
+        public static readonly LocString MountsTitle = new("history.mounts.title", "Hunt mounts");
+        public static readonly LocString MountsARanks = new("history.mounts.aRanks", "A ranks");
+        public static readonly LocString MountsSRanks = new("history.mounts.sRanks", "S ranks");
+        public static readonly LocString MountsCount = new("history.mounts.count", "{0} / {1}");
+        public static readonly LocString MountsComplete = new("history.mounts.complete", "Complete");
+        public static readonly LocString MountsTooltip = new("history.mounts.tooltip", "Reward for the achievement “{0}”");
+        public static readonly LocString MountsReading = new("history.mounts.reading", "Reading your hunt achievements…");
+        public static readonly LocString MountsUpdating = new("history.mounts.updating", "Updating…");
+        public static readonly LocString MountsUpdated = new("history.mounts.updated", "Updated {0}");
+        public static readonly LocString MountsPartial = new("history.mounts.partial", "Some progress could not be read; retrying shortly");
+        public static readonly LocString MountsWaiting = new("history.mounts.waiting", "Waiting for the game to share your achievement progress");
     }
 
     internal static class Plugins

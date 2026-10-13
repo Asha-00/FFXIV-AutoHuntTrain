@@ -53,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
     internal Configuration Configuration { get; }
     internal WindowSystem WindowSystem { get; } = new("AutoHuntTrain");
     internal RunHistory History { get; }
+    internal HuntMountProgress MountProgress { get; }
     internal AutoHuntController Controller { get; }
     internal FlagListener Flags { get; }
     internal FeedListener Feed { get; }
@@ -87,6 +88,7 @@ public sealed class Plugin : IDalamudPlugin
 
         OpenTrainLink = Svc.Chat.AddChatLinkHandler(OpenTrainLinkCommandId, OnOpenTrainLink);
         History = new RunHistory();
+        MountProgress = new HuntMountProgress(History);
         Controller = new AutoHuntController();
         Flags = new FlagListener();
         Feed = new FeedListener();
@@ -281,6 +283,7 @@ public sealed class Plugin : IDalamudPlugin
         Notifier.Tick();
         PartyFinder.Tick();
         Controller.Tick();
+        MountProgress.Tick();
     }
 
     private static bool HasSubcommand(string arguments, string subcommand)

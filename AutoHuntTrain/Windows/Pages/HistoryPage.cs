@@ -1,9 +1,12 @@
 using AutoHuntTrain.Core.Localization;
+using AutoHuntTrain.Core.Marks;
 using AutoHuntTrain.Core.Stats;
 using AutoHuntTrain.Windows.Components;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
+using ECommons.DalamudServices;
+using Lumina.Excel.Sheets;
 using System.Numerics;
 
 namespace AutoHuntTrain.Windows.Pages;
@@ -18,12 +21,25 @@ internal sealed class HistoryPage
     private const float ConfirmSlide = 12f;
     private const string NoValue = "-";
     private const float BadgeGap = 6f;
+    private const float LabelCaptionGap = 16f;
+    private const float MountNameShare = 0.32f;
+    private const float MountColumnGap = 18f;
+    private const float MountCardPadY = 4f;
+    private const float MountRowPadY = 10f;
+    private const float MountLineGap = 5f;
+    private const float MountBarHeight = 6f;
+    private const float CounterLabelGap = 8f;
+    private const long NeededKeyMask = 0x3FFF_FFFF;
 
+    private readonly string?[] mountNames = new string?[HuntMounts.Count];
+    private readonly CachedText[] mountTooltips = new CachedText[HuntMounts.Count];
+    private readonly CachedText[] counterTexts = new CachedText[HuntMounts.CounterCount];
     private bool confirmClear;
     private CachedText finishedText;
     private CachedText perRideText;
     private CachedText nutsText;
     private CachedText topWorldText;
+    private CachedText refreshedText;
 
     public void Draw(Plugin plugin)
     {
@@ -35,6 +51,9 @@ internal sealed class HistoryPage
         PageHeader.Draw(Loc.T(L.History.Title), subtitle);
 
         DrawLifetime(totals, history.Revision);
+        Styling.VSpace(14f);
+
+        DrawMounts(plugin.MountProgress);
         Styling.VSpace(14f);
 
         if (history.Records.Count == 0)
@@ -59,13 +78,25 @@ internal sealed class HistoryPage
         DrawClearControl(history);
     }
 
-    private static void Label(string text)
+    private static void Label(string text, string? caption = null)
     {
         var scale = ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
+        var available = ImGui.GetContentRegionAvail().X;
         var size = TextDraw.SectionTitleSize(text);
         TextDraw.SectionTitle(text, origin, Styling.TextStrong);
-        ImGui.Dummy(new Vector2(ImGui.GetContentRegionAvail().X, size.Y + 8f * scale));
+        if (!string.IsNullOrEmpty(caption))
+        {
+            using (Fonts.PushCaption())
+            {
+                var left = origin.X + size.X + LabelCaptionGap * scale;
+                var fitted = TextDraw.Truncate(caption, origin.X + available - left);
+                var captionSize = TextDraw.Measure(fitted);
+                TextDraw.At(fitted, new Vector2(origin.X + available - captionSize.X, origin.Y + (size.Y - captionSize.Y) * 0.5f), Styling.TextMuted);
+            }
+        }
+
+        ImGui.Dummy(new Vector2(available, size.Y + 8f * scale));
     }
 
     // The captions are rebuilt only when the history changes; the revision is their cache key.
@@ -97,6 +128,200 @@ internal sealed class HistoryPage
         }
 
         return dataCenter.Length == 0 ? world : Loc.T(L.History.WorldAndDataCenter, world, dataCenter);
+    }
+
+    private void DrawMounts(HuntMountProgress progress)
+    {
+        progress.NoteShown();
+        Label(Loc.T(L.History.MountsTitle), MountsCaption(progress));
+
+        var scale = ImGuiHelpers.GlobalScale;
+        var rowHeight = MountRowHeight();
+        var padY = MountCardPadY * scale;
+        var size = new Vector2(ImGui.GetContentRegionAvail().X, padY * 2f + rowHeight * HuntMounts.Count);
+        var origin = ImGui.GetCursorScreenPos();
+        var end = origin + size;
+        var drawList = ImGui.GetWindowDrawList();
+        Paint.Surface(drawList, origin, end, Styling.CardRounding * scale, Styling.WithAlpha(Styling.Surface0, 0.6f), Styling.WithAlpha(Styling.BorderDim, 0.5f), topLight: false);
+
+        var padX = PadX * scale;
+        var loading = progress.Status == MountProgressStatus.Reading;
+        for (var mountIndex = 0; mountIndex < HuntMounts.Count; mountIndex++)
+        {
+            var rowMin = new Vector2(origin.X, origin.Y + padY + rowHeight * mountIndex);
+            var rowMax = new Vector2(end.X, rowMin.Y + rowHeight);
+            if (mountIndex > 0)
+            {
+                Paint.Hairline(drawList, new Vector2(rowMin.X + padX, rowMin.Y), new Vector2(rowMax.X - padX, rowMin.Y));
+            }
+
+            DrawMountRow(drawList, progress, mountIndex, rowMin, rowMax, loading);
+        }
+
+        ImGui.Dummy(size);
+    }
+
+    private string MountsCaption(HuntMountProgress progress) => progress.Status switch
+    {
+        MountProgressStatus.Reading => progress.HasReadings ? Loc.T(L.History.MountsUpdating) : Loc.T(L.History.MountsReading),
+        MountProgressStatus.Ready => RefreshedText(progress.LastRefreshUtc),
+        MountProgressStatus.Partial => Loc.T(L.History.MountsPartial),
+        _ => Loc.T(L.History.MountsWaiting),
+    };
+
+    // Relative text moves on by the minute, so the minutes since the refresh are its cache key.
+    private string RefreshedText(DateTime refreshedAtUtc)
+    {
+        var minutes = (long)(DateTime.UtcNow - refreshedAtUtc).TotalMinutes;
+        if (refreshedText.TryGet(minutes, out var text))
+        {
+            return text;
+        }
+
+        return refreshedText.Set(minutes, Loc.T(L.History.MountsUpdated, RelativeTime(refreshedAtUtc)));
+    }
+
+    // Adds up the same lines and gaps the row draws, so the two stay in step at any font size.
+    private static float MountRowHeight()
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        var nameBlock = ImGui.GetTextLineHeight() + MountLineGap * scale + Badge.Height();
+        float captionLine;
+        using (Fonts.PushCaption())
+        {
+            captionLine = ImGui.GetTextLineHeight();
+        }
+
+        var counterBlock = captionLine + (MountLineGap + MountBarHeight) * scale;
+        return MathF.Max(nameBlock, counterBlock) + MountRowPadY * 2f * scale;
+    }
+
+    private void DrawMountRow(ImDrawListPtr drawList, HuntMountProgress progress, int mountIndex, Vector2 min, Vector2 max, bool loading)
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        var mount = HuntMounts.All[mountIndex];
+        var accent = GroupLabels.Color(mount.Group);
+        var padX = PadX * scale;
+        var gap = MountColumnGap * scale;
+        var left = min.X + padX;
+        var innerWidth = max.X - min.X - padX * 2f;
+        var nameWidth = innerWidth * MountNameShare;
+        var counterWidth = (innerWidth - nameWidth - gap * 2f) * 0.5f;
+        var midY = (min.Y + max.Y) * 0.5f;
+
+        DrawMountName(drawList, mountIndex, progress.IsMountComplete(mountIndex), left, nameWidth, midY);
+
+        var counterX = left + nameWidth + gap;
+        var aRank = progress.ARank(mountIndex);
+        DrawCounter(drawList, aRank, Loc.T(L.History.MountsARanks), CounterText(HuntMounts.ARankCounter(mountIndex), aRank), counterX, counterWidth, midY, accent, loading);
+        counterX += counterWidth + gap;
+        var sRank = progress.SRank(mountIndex);
+        DrawCounter(drawList, sRank, Loc.T(L.History.MountsSRanks), CounterText(HuntMounts.SRankCounter(mountIndex), sRank), counterX, counterWidth, midY, accent, loading);
+
+        if (Hit.HoveringRect(min, max))
+        {
+            Tooltip.Show(MountTooltip(mountIndex));
+        }
+    }
+
+    private void DrawMountName(ImDrawListPtr drawList, int mountIndex, bool complete, float x, float width, float midY)
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        var lineHeight = ImGui.GetTextLineHeight();
+        var badgeHeight = Badge.Height();
+        var top = midY - (lineHeight + MountLineGap * scale + badgeHeight) * 0.5f;
+        TextDraw.At(TextDraw.Truncate(MountName(mountIndex), width), new Vector2(x, top), Styling.TextStrong);
+
+        var group = HuntMounts.All[mountIndex].Group;
+        var badgeMidY = top + lineHeight + MountLineGap * scale + badgeHeight * 0.5f;
+        var badgeX = x + Badge.DrawLeft(drawList, GroupLabels.Name(group), GroupLabels.Color(group), x, badgeMidY) + BadgeGap * scale;
+        if (complete)
+        {
+            Badge.DrawLeft(drawList, Loc.T(L.History.MountsComplete), Styling.AccentMint, badgeX, badgeMidY);
+        }
+    }
+
+    // A counter not read yet shows a moving bar while a pass is under way, and an empty one otherwise.
+    private static void DrawCounter(ImDrawListPtr drawList, CounterReading reading, string label, string count, float x, float width, float midY, Vector4 accent, bool loading)
+    {
+        if (width <= 0f)
+        {
+            return;
+        }
+
+        var scale = ImGuiHelpers.GlobalScale;
+        var labelSize = TextDraw.SmallCapsSize(label);
+        float captionLine;
+        Vector2 countSize;
+        using (Fonts.PushCaption())
+        {
+            captionLine = ImGui.GetTextLineHeight();
+            countSize = TextDraw.Measure(count);
+        }
+
+        var barHeight = MountBarHeight * scale;
+        var top = midY - (captionLine + MountLineGap * scale + barHeight) * 0.5f;
+        var complete = reading.Status == CounterStatus.Complete;
+        if (labelSize.X + CounterLabelGap * scale + countSize.X <= width)
+        {
+            TextDraw.SmallCaps(label, new Vector2(x, top), Styling.TextDim);
+        }
+
+        using (Fonts.PushCaption())
+        {
+            TextDraw.At(count, new Vector2(x + width - countSize.X, top), complete ? Styling.AccentMintSoft : Styling.TextSecondary);
+        }
+
+        var barOrigin = new Vector2(x, top + captionLine + MountLineGap * scale);
+        if (loading && reading.Status == CounterStatus.Unknown)
+        {
+            Paint.IndeterminateBar(drawList, barOrigin, width, barHeight, accent);
+            return;
+        }
+
+        Paint.Bar(drawList, barOrigin, width, barHeight, reading.Fraction, complete ? Styling.AccentMint : accent);
+    }
+
+    private string CounterText(int counterIndex, CounterReading reading)
+    {
+        var key = ((long)reading.Current << 32) | ((reading.Needed & NeededKeyMask) << 2) | (long)reading.Status;
+        if (counterTexts[counterIndex].TryGet(key, out var text))
+        {
+            return text;
+        }
+
+        var needed = reading.Needed.ToString("N0", Loc.Culture);
+        var current = reading.Status switch
+        {
+            CounterStatus.Unknown => NoValue,
+            CounterStatus.Complete => needed,
+            _ => reading.Current.ToString("N0", Loc.Culture),
+        };
+        return counterTexts[counterIndex].Set(key, Loc.T(L.History.MountsCount, current, needed));
+    }
+
+    // The game's own sheet names the mount in the client language; it never changes while the plugin runs.
+    private string MountName(int mountIndex)
+    {
+        if (mountNames[mountIndex] is { } cached)
+        {
+            return cached;
+        }
+
+        var mountId = HuntMounts.All[mountIndex].MountId;
+        var name = GameText.Title(Svc.Data.GetExcelSheet<Mount>().GetRowOrDefault(mountId)?.Singular.ExtractText() ?? string.Empty);
+        return mountNames[mountIndex] = name.Length == 0 ? $"#{mountId}" : name;
+    }
+
+    private string MountTooltip(int mountIndex)
+    {
+        if (mountTooltips[mountIndex].TryGet(0, out var text))
+        {
+            return text;
+        }
+
+        var achievementName = Svc.Data.GetExcelSheet<Achievement>().GetRowOrDefault(HuntMounts.All[mountIndex].AchievementId)?.Name.ExtractText() ?? string.Empty;
+        return mountTooltips[mountIndex].Set(0, achievementName.Length == 0 ? string.Empty : Loc.T(L.History.MountsTooltip, achievementName));
     }
 
     private static void DrawEmptyState()
