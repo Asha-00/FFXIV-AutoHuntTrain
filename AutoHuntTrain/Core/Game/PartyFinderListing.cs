@@ -201,7 +201,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        if (!ListingUp)
+        if (!ListingUp && !Loading())
         {
             ownsListing = false;
             RunLog.Info($"Party Finder: {reason}, and the listing had already ended on its own");
@@ -660,7 +660,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
 
     private void AwaitEndHold()
     {
-        if (EndedMeanwhile())
+        if (!Loading() && EndedMeanwhile())
         {
             return;
         }
@@ -784,7 +784,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        if (ListingUp)
+        if (ListingUp || Loading())
         {
             goneSinceMs = 0;
             return;
@@ -804,6 +804,9 @@ internal sealed unsafe class PartyFinderListing : IDisposable
         ownsListing = false;
         RunLog.Info("Party Finder: the listing has ended (the party filled up, its time ran out, or it was ended by hand)");
     }
+
+    // A loading screen is not trusted to show the conditions, so nothing is concluded from them during one.
+    private static bool Loading() => Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51];
 
     private void Enter(Step next, int timeoutMs)
     {
