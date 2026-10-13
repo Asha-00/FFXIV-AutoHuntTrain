@@ -181,6 +181,7 @@
   "changelog.new": "Yeni",
   "changelog.changes.one": "{0} değişiklik",
   "changelog.changes.other": "{0} değişiklik",
+  "changelog.r1100.1": "S seviye avları eklendi: HuntAlerts'ten gelen S seviye bildirimleri artık listede bir S Seviye Avı düğmesiyle görünür; düğme hedefe gider, başka bir oyuncu saldırana kadar güvenli bir mesafede bekler, savaşa katılır ve av sayıldığında biter, katkı: Asha-00",
   "changelog.r1010.1": "Hakkında sayfasında Patreon'un altına Buy Me a Coffee düğmesi eklendi",
   "changelog.r1000.1": "HuntAlerts ile duyurulan av trenlerine biner; her trende bir Bin düğmesi, genişleme başına otomatik katılım ve erteleme ile",
   "changelog.r1000.2": "Lifestream ile trenin dünyasına, veri merkezine ve instance'ına gider, veri merkezi geçişindeki yeniden girişte yolculuğu sürdürür",

@@ -181,6 +181,7 @@
   "changelog.new": "Nouveau",
   "changelog.changes.one": "{0} changement",
   "changelog.changes.other": "{0} changements",
+  "changelog.r1100.1": "Ajout des chasses S : les signalements de rang S de HuntAlerts apparaissent désormais dans la liste avec un bouton Chasse S qui se rend jusqu'à la cible, attend à distance sûre qu'un autre joueur l'engage, rejoint le combat et s'arrête une fois la victoire comptée, contribution d'Asha-00",
   "changelog.r1010.1": "Ajout d'un bouton Buy Me a Coffee sous Patreon sur la page À propos",
   "changelog.r1000.1": "Suit les trains de chasse annoncés par HuntAlerts, avec un bouton Embarquer sur chaque train, la participation automatique par extension et la mise en veille",
   "changelog.r1000.2": "Rejoint le monde, le centre de données et l'instance du train via Lifestream, et garde le trajet à travers la reconnexion d'un changement de centre de données",

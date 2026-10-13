@@ -181,6 +181,7 @@
   "changelog.new": "Nuevo",
   "changelog.changes.one": "{0} cambio",
   "changelog.changes.other": "{0} cambios",
+  "changelog.r1100.1": "Añadidas las cacerías S: los avisos de rango S de HuntAlerts aparecen ahora en la lista con un botón Cacería S que viaja hasta la presa, espera a una distancia segura a que otro jugador la ataque, se une al combate y termina cuando la muerte cuenta, contribuido por Asha-00",
   "changelog.r1010.1": "Añadido un botón de Buy Me a Coffee debajo de Patreon en la página Acerca de",
   "changelog.r1000.1": "Sube a los trenes de caza anunciados por HuntAlerts, con un botón Subir en cada tren, unión automática por expansión y pausa",
   "changelog.r1000.2": "Viaja al mundo, centro de datos e instancia del tren mediante Lifestream y mantiene el viaje a través de la reconexión de un traslado de centro de datos",

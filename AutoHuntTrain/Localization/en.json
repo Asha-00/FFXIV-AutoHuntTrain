@@ -181,6 +181,7 @@
   "changelog.new": "New",
   "changelog.changes.one": "{0} change",
   "changelog.changes.other": "{0} changes",
+  "changelog.r1100.1": "Added one-off S-Hunts: S-rank relays from HuntAlerts now appear in the list with an S-Hunt button that travels to the mark, waits at a safe distance for another player to pull, joins the fight and ends once the kill is credited, contributed by Asha-00",
   "changelog.r1010.1": "Added a Buy Me a Coffee button under Patreon on the About page",
   "changelog.r1000.1": "Rides hunt trains announced through HuntAlerts, with a Ride button on every train, auto-join per expansion and snooze",
   "changelog.r1000.2": "Travels to the train's world, data center and instance through Lifestream, and carries a ride across the data center relog",

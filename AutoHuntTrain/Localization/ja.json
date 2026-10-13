@@ -181,6 +181,7 @@
   "changelog.new": "新着",
   "changelog.changes.one": "{0}件の変更",
   "changelog.changes.other": "{0}件の変更",
+  "changelog.r1100.1": "Sモブ討伐を追加：HuntAlertsのSランク通知が一覧にSモブ討伐ボタン付きで表示されます。目標まで移動し、安全な距離で他のプレイヤーの攻撃を待ってから戦闘に参加し、討伐が記録されると終了します（Asha-00さんの貢献）",
   "changelog.r1010.1": "情報ページのPatreonの下にBuy Me a Coffeeボタンを追加",
   "changelog.r1000.1": "HuntAlerts で告知されたモブハントトレインに乗ります。どのトレインにも乗車ボタン、拡張パッケージごとの自動参加、スヌーズ付き",
   "changelog.r1000.2": "Lifestream でトレインのワールド、データセンター、インスタンスへ移動し、データセンター移動の再ログインをまたいで乗車を続けます",
