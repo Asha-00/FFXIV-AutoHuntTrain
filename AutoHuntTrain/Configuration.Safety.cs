@@ -22,6 +22,9 @@ public sealed partial class Configuration
     public bool AcceptPartyInvites { get; set; } = true;
     public bool PostLookingForGroup { get; set; } = false;
     public string LookingForGroupText { get; set; } = "LFG";
+    public bool CreatePartyFinderListing { get; set; } = false;
+    // Cut to PartyFinderListing.CommentMaxBytes when the listing is put up.
+    public string PartyFinderComment { get; set; } = "Hunt train - join for credit";
     public bool LeavePartyAfterRide { get; set; } = true;
 
     public bool GmAlertStopRun { get; set; } = true;

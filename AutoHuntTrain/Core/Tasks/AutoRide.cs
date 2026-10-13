@@ -529,6 +529,7 @@ internal sealed partial class AutoRide : AutoCommon
                     return;
                 }
 
+                await ListOnPartyFinderWhenDue();
                 await UpkeepWhenQuiet();
                 await NextFrame(WaitPollFrames);
                 continue;

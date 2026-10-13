@@ -49,6 +49,7 @@ internal sealed partial class AutoHuntController
         currentTask = null;
         Svc.Automation.Stop();
         ReleaseHelpers();
+        Plugin.Instance.PartyFinderListing.Withdraw("the ride was paused");
 
         Diag($"Run paused ({reason}); session kept at {pausing.MarksCredited} marks credited.");
         ECommons.DalamudServices.Svc.Chat.Print(reason == PauseReason.InContent

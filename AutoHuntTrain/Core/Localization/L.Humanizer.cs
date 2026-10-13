@@ -23,5 +23,7 @@ internal static partial class L
         public static readonly LocString ShoutHelp = new("humanizer.shoutHelp", "After arriving at the train's start, before the looking-for-group shout goes out.");
         public static readonly LocString TeleportOffer = new("humanizer.teleportOffer", "Accepting a party teleport");
         public static readonly LocString TeleportOfferHelp = new("humanizer.teleportOfferHelp", "Before accepting a party member's teleport offer during a ride.");
+        public static readonly LocString PartyFinder = new("humanizer.partyFinder", "Putting up a Party Finder listing");
+        public static readonly LocString PartyFinderHelp = new("humanizer.partyFinderHelp", "In a lull after arriving at the train's start, before the Party Finder is opened to put up the listing.");
     }
 }
