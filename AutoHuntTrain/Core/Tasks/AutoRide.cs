@@ -49,7 +49,8 @@ internal sealed partial class AutoRide : AutoCommon
     private readonly Announcement? announcement;
     private readonly Action<FlagPost> onPosted;
     private readonly Action<SpokenLine> onSpoken;
-    // A newer flag, or the conductor ending the train, cuts short whatever the ride is doing besides a fight.
+    // A newer flag, the conductor ending the train or an instance call that is due cuts short whatever the ride is
+    // doing besides a fight.
     private readonly Func<bool> interrupted;
     private readonly IFramework.OnUpdateDelegate sampleMarkHealth;
 
@@ -80,7 +81,7 @@ internal sealed partial class AutoRide : AutoCommon
         this.announcement = announcement;
         onPosted = OnPosted;
         onSpoken = OnSpoken;
-        interrupted = () => hasPending || conductorEnded;
+        interrupted = () => hasPending || conductorEnded || InstanceInterruptNeeded();
         sampleMarkHealth = SampleMarkHealth;
     }
 
@@ -434,6 +435,11 @@ internal sealed partial class AutoRide : AutoCommon
 
             if (!hasPending)
             {
+                if (await HandlePendingInstanceRequest())
+                {
+                    continue;
+                }
+
                 if (IdleLimitReached())
                 {
                     EndOnSilence(IdleLimitMs());
@@ -519,12 +525,15 @@ internal sealed partial class AutoRide : AutoCommon
             return;
         }
 
+        var heard = post;
+        post = WithRequestedInstance(heard);
         if (RepeatedFlag(post) is { } repeated)
         {
             RunLog.Debug($"Ride: flag from {Conductor.Describe(conductor)} in {TerritoryNames.Of(post.TerritoryId)} at ({post.MapX:F1}, {post.MapY:F1}){InstanceText(post)} via {post.ChatType} repeats {repeated}; ignored");
             return;
         }
 
+        NoteFlagAgainstInstanceRequest(heard, post);
         pending = post;
         hasPending = true;
         quietSinceMs = Environment.TickCount64;
@@ -548,28 +557,43 @@ internal sealed partial class AutoRide : AutoCommon
         return hasArrivedFlag && post.Repeats(arrivedFlag) ? "the flag last arrived at" : null;
     }
 
-    // Only the conductor followed can end the train. A thank-you before any flag was followed greets the riders rather
-    // than dismissing them.
+    // Only the conductor followed can end the train or call an instance.
     private void OnSpoken(SpokenLine line)
     {
-        if (conductorEnded || !Plugin.Instance.Configuration.EndOnConductorPhrase || !conductor.IsSet || !conductor.Matches(line))
+        if (conductorEnded || !conductor.IsSet || !conductor.Matches(line))
         {
             return;
         }
 
-        if (TrainEndPhrases.Find(line.Text) is not { } phrase)
+        if (EndsTrain(line))
         {
             return;
+        }
+
+        var instance = InstanceHints.ParseStandalone(line.Text);
+        if (instance > 0)
+        {
+            QueueInstanceRequest(instance, line);
+        }
+    }
+
+    // A thank-you before any flag was followed greets the riders rather than dismissing them.
+    private bool EndsTrain(in SpokenLine line)
+    {
+        if (!Plugin.Instance.Configuration.EndOnConductorPhrase || TrainEndPhrases.Find(line.Text) is not { } phrase)
+        {
+            return false;
         }
 
         if (progress.FlagsFollowed == 0 && session.MarksCredited == 0)
         {
             Diag($"Ride: {Conductor.Describe(conductor)} said \"{line.Text}\" via {line.ChatType}, matching \"{phrase}\", before any flag was followed; not taken as the end of the train");
-            return;
+            return false;
         }
 
         conductorEnded = true;
         Diag($"Ride: {Conductor.Describe(conductor)} said \"{line.Text}\" via {line.ChatType}, matching \"{phrase}\"; the ride ends {(engaging ? "once the fight in progress finishes" : "now")}");
+        return true;
     }
 
     // Only an announced ride picks: from a flag in the start zone, when known, posted from shortly before the start, or
@@ -664,12 +688,13 @@ internal sealed partial class AutoRide : AutoCommon
         {
             Diag(conductorEnded
                 ? $"{label}: the conductor ended the train; the leg to {zoneName} is dropped"
-                : $"{label}: a newer flag arrived; the leg to {zoneName} is dropped");
+                : $"{label}: a newer flag or instance call arrived; the leg to {zoneName} is dropped");
             return;
         }
 
         if (!ReachedFlag(leg, completed, label, zoneName))
         {
+            DropInstanceRequestAfterLeg(leg, flag);
             session.LastSettledFlagAtUtc = flag.PostedAtUtc;
             BeginWaiting();
             return;
@@ -767,7 +792,8 @@ internal sealed partial class AutoRide : AutoCommon
     }
 
     // Stays put, mounted or not, until a mark of the zone stands near the flag and someone has pulled it, unless the
-    // player would rather pull. A newer flag ends the wait: the train has moved on.
+    // player would rather pull. A newer flag ends the wait: the train has moved on. So does an instance call while no
+    // mark is in view; with one in view, the switch waits until it is fought.
     private async Task<ZoneMarkSighting?> WaitForPulledMark(FlagPost flag, uint territoryId, string label, string zoneName)
     {
         var configuration = Plugin.Instance.Configuration;
@@ -778,6 +804,7 @@ internal sealed partial class AutoRide : AutoCommon
         var waitingStatus = $"Waiting for the mark at the flag in {zoneName}";
         var pullStatus = waitingStatus;
         var sightedNameId = 0u;
+        var instanceCallDeferred = false;
         progress.SetRidePhase(RidePhase.WaitingForMark);
         Status = waitingStatus;
         while (!CancelToken.IsCancellationRequested)
@@ -827,6 +854,22 @@ internal sealed partial class AutoRide : AutoCommon
                 sightedNameId = 0;
                 progress.ClearMark();
                 Status = waitingStatus;
+            }
+
+            if (InstanceInterruptNeeded())
+            {
+                if (sightedNameId == 0)
+                {
+                    if (RefollowForInstance(flag, label, zoneName))
+                    {
+                        return null;
+                    }
+                }
+                else if (!instanceCallDeferred)
+                {
+                    instanceCallDeferred = true;
+                    Diag($"{label}: the conductor called instance {instanceRequest.Instance}, but {HuntMarkRegistry.NameOf(sightedNameId)} is in view here; the switch waits until it is fought");
+                }
             }
 
             if (Environment.TickCount64 >= deadline)
