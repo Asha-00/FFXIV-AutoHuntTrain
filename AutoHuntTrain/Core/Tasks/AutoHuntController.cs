@@ -99,7 +99,7 @@ internal sealed partial class AutoHuntController
         }
 
         RideAnnouncement(announcement, NewRideSession(announcement), "riding");
-        var travel = announcement.InProgressAt(DateTime.UtcNow) && TrainRoutes.TryFor(announcement, out _)
+        var travel = announcement.CatchUpDueAt(DateTime.UtcNow) && TrainRoutes.TryFor(announcement, out _)
             ? $"it is already in progress, so the ride catches up with it once on {world.Name}"
             : $"travelling to {StartText(announcement)}";
         RideChat.PrintStart($"{AhtConstants.LogPrefix} Riding the {group} train on {world.Name}; {travel}.");

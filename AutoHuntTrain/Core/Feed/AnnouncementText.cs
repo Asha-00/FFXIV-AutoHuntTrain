@@ -2,9 +2,9 @@ using System.Text;
 
 namespace AutoHuntTrain.Core.Feed;
 
-// What the relay's Discord text says beyond its fields: the start time in a timestamp tag, the conductor's name after
-// a "Conductor" label, and the emoji codes that only clutter a log line.
-internal static class AnnouncementText
+// What the relay's Discord text says beyond its fields: the start time in a timestamp tag, a clock time or a wait such
+// as "in 10 minutes", the conductor's name after a "Conductor" label, and the emoji codes that only clutter a log line.
+internal static partial class AnnouncementText
 {
     private const string TimestampOpen = "<t:";
     private const char TagOpen = '<';
@@ -21,14 +21,30 @@ internal static class AnnouncementText
     private const int EmojiNameMaxLength = 32;
     private const string PostedLabel = "Posted:";
     private const char LineBreak = '\n';
-    // HuntAlerts relays every Discord timestamp as this PC's local clock time in the form "07:45 PM", eight characters.
-    private const int ClockLength = 8;
+    private const int MaxHourDigits = 2;
+    private const int MinuteDigits = 2;
+    private const int MeridiemLength = 2;
     private const int HoursPerHalfDay = 12;
     private const int MinutesPerHour = 60;
+    private const char EnDash = '\u2013';
+    private const char EmDash = '\u2014';
+    private const char Tilde = '~';
 
     // A start outside the game's lifetime is a mangled tag, not a train.
     private static readonly long EarliestEpoch = new DateTimeOffset(2013, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds();
     private static readonly long LatestEpoch = new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds();
+    // Two clock times further apart than this give the train's whole run, as in "07:45 PM - 08:30 PM", not a start window.
+    private static readonly TimeSpan MaxClockWindow = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan HandTypedClockBeforePost = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan HandTypedClockAfterPost = TimeSpan.FromMinutes(MaxRelativeMinutes);
+    // A clock time written in one of these zones, server and Eorzea time among them, is not this PC's clock.
+    private static readonly string[] timeZoneWords =
+    [
+        "UTC", "GMT", "ST", "ET", "server", "EST", "EDT", "CST", "CDT", "MST", "MDT", "PST", "PDT", "CT", "MT", "PT",
+        "AKST", "AKDT", "HST", "BST", "CET", "CEST", "EET", "EEST", "WET", "WEST", "JST", "KST", "SGT", "AEST", "AEDT",
+        "ACST", "ACDT", "AWST", "NZST", "NZDT",
+    ];
+    private static readonly string[] rangeWords = ["to", "or", "and"];
 
     // The first well-formed <t:EPOCH> or <t:EPOCH:STYLE> tag.
     public static bool TryReadStartTime(string text, out DateTime startAtUtc)
@@ -59,30 +75,33 @@ internal static class AnnouncementText
         return false;
     }
 
-    // The first "hh:mm AM" or "hh:mm PM" outside the "Posted:" line, read on the day nearest the post: HuntAlerts turns
-    // every Discord timestamp into exactly that before relaying the text, so the tag above is usually gone.
-    public static bool TryReadClockTime(string text, DateTime postedAtUtc, out DateTime startAtUtc)
+    // The first clock time such as "07:45 PM" outside the "Posted:" line, read on the day nearest the post: HuntAlerts
+    // turns every Discord timestamp into exactly that before relaying the text, so the tag above is usually gone. A
+    // second time after a range mark on the same line, as in "07:45 PM - 08:00 PM", makes a start window whose later
+    // end is the start.
+    public static bool TryReadClockTime(string text, DateTime postedAtUtc, out DateTime earliestAtUtc, out DateTime startAtUtc)
     {
-        startAtUtc = default;
         var lineStart = 0;
         while (lineStart < text.Length)
         {
-            var lineEnd = text.IndexOf(LineBreak, lineStart);
-            if (lineEnd < 0)
+            var lineEnd = LineEnd(text, lineStart);
+            if (!StartsWithLabel(text, lineStart, lineEnd, PostedLabel) && TryFindClock(text, lineStart, lineEnd, postedAtUtc, out earliestAtUtc, out startAtUtc))
             {
-                lineEnd = text.Length;
-            }
-
-            if (!StartsWithLabel(text, lineStart, lineEnd, PostedLabel) && TryFindClock(text, lineStart, lineEnd, out var hour, out var minute))
-            {
-                startAtUtc = NearestLocalTime(hour, minute, postedAtUtc);
                 return true;
             }
 
             lineStart = lineEnd + 1;
         }
 
+        earliestAtUtc = default;
+        startAtUtc = default;
         return false;
+    }
+
+    private static int LineEnd(string text, int lineStart)
+    {
+        var lineEnd = text.IndexOf(LineBreak, lineStart);
+        return lineEnd < 0 ? text.Length : lineEnd;
     }
 
     private static bool StartsWithLabel(string text, int start, int end, string label)
@@ -96,71 +115,145 @@ internal static class AnnouncementText
         return end - index >= label.Length && string.Compare(text, index, label, 0, label.Length, StringComparison.OrdinalIgnoreCase) == 0;
     }
 
-    private static bool TryFindClock(string text, int start, int end, out int hour, out int minute)
+    // The later time is the first itself when no window follows it. A reading in another zone is passed over whole, and
+    // so is a hand-typed one that lands far from the post.
+    private static bool TryFindClock(string text, int start, int end, DateTime postedAtUtc, out DateTime earliestAtUtc, out DateTime startAtUtc)
     {
-        for (var index = start; index + ClockLength <= end; index++)
+        for (var index = start; index < end; index++)
         {
             if (index > start && char.IsLetterOrDigit(text[index - 1]))
             {
                 continue;
             }
 
-            if (index + ClockLength < end && char.IsLetterOrDigit(text[index + ClockLength]))
+            if (!TryReadClockAt(text, index, end, out var first))
             {
                 continue;
             }
 
-            if (TryReadClockAt(text, index, out hour, out minute))
+            if (!TryReadClockAfterRangeMark(text, first.End, end, out var later))
             {
-                return true;
+                later = first;
             }
+
+            index = later.End - 1;
+            if (FollowedByTimeZone(text, first.End, end) || FollowedByTimeZone(text, later.End, end))
+            {
+                continue;
+            }
+
+            earliestAtUtc = NearestLocalTime(first.Hour, first.Minute, postedAtUtc);
+            startAtUtc = WindowEnd(later, earliestAtUtc);
+            if ((first.HandTyped || later.HandTyped) && !NearPost(earliestAtUtc, postedAtUtc))
+            {
+                continue;
+            }
+
+            return true;
         }
 
-        hour = 0;
-        minute = 0;
+        earliestAtUtc = default;
+        startAtUtc = default;
         return false;
     }
 
-    private static bool TryReadClockAt(string text, int index, out int hour, out int minute)
+    // A time typed by hand may be in the poster's own zone rather than this PC's, so it is believed only from a little
+    // before the post to the longest wait a post gives ahead of its train; a zone or two away lands outside.
+    private static bool NearPost(DateTime atUtc, DateTime postedAtUtc)
+        => atUtc >= postedAtUtc - HandTypedClockBeforePost && atUtc <= postedAtUtc + HandTypedClockAfterPost;
+
+    // "07:45 PM" as HuntAlerts writes it, or "7:45 PM" and "7:45pm" as typed by hand. No letter or digit may run on
+    // after it, and the caller starts it on a word, so "17:45 PM" gives no time at all.
+    private static bool TryReadClockAt(string text, int index, int end, out ClockTime clock)
     {
-        hour = 0;
-        minute = 0;
-        if (!char.IsAsciiDigit(text[index]) || !char.IsAsciiDigit(text[index + 1]) || text[index + 2] != Colon
-            || !char.IsAsciiDigit(text[index + 3]) || !char.IsAsciiDigit(text[index + 4]) || text[index + 5] != ' '
-            || char.ToUpperInvariant(text[index + 7]) != 'M')
+        clock = default;
+        var cursor = index;
+        if (!TryReadDigits(text, ref cursor, end, MaxHourDigits, out var twelveHour) || cursor >= end || text[cursor] != Colon)
         {
             return false;
         }
 
-        var meridiem = char.ToUpperInvariant(text[index + 6]);
-        if (meridiem != 'A' && meridiem != 'P')
+        var shortHour = cursor - index < MaxHourDigits;
+        cursor++;
+        var minuteStart = cursor;
+        if (!TryReadDigits(text, ref cursor, end, MinuteDigits, out var minute) || cursor - minuteStart != MinuteDigits)
         {
             return false;
         }
 
-        var twelveHour = (text[index] - '0') * 10 + (text[index + 1] - '0');
-        minute = (text[index + 3] - '0') * 10 + (text[index + 4] - '0');
+        var spaced = cursor < end && text[cursor] == ' ';
+        if (spaced)
+        {
+            cursor++;
+        }
+
+        if (end - cursor < MeridiemLength || char.ToUpperInvariant(text[cursor + 1]) != 'M')
+        {
+            return false;
+        }
+
+        var meridiem = char.ToUpperInvariant(text[cursor]);
+        cursor += MeridiemLength;
+        if ((meridiem != 'A' && meridiem != 'P') || (cursor < end && char.IsLetterOrDigit(text[cursor])))
+        {
+            return false;
+        }
+
         if (twelveHour is < 1 or > HoursPerHalfDay || minute >= MinutesPerHour)
         {
             return false;
         }
 
-        hour = twelveHour % HoursPerHalfDay + (meridiem == 'P' ? HoursPerHalfDay : 0);
+        clock = new ClockTime(twelveHour % HoursPerHalfDay + (meridiem == 'P' ? HoursPerHalfDay : 0), minute, cursor, shortHour || !spaced);
         return true;
     }
 
-    // A clock time carries no date; the train starts on whichever day puts it nearest the post, so a train posted at
-    // 23:50 for 00:10 lands on the next day.
-    private static DateTime NearestLocalTime(int hour, int minute, DateTime postedAtUtc)
+    private static bool TryReadClockAfterRangeMark(string text, int start, int end, out ClockTime clock)
     {
-        var postedDate = postedAtUtc.ToLocalTime().Date;
-        var best = postedAtUtc;
+        clock = default;
+        var cursor = SkipSpacing(text, start, end);
+        if (!TrySkipRangeMark(text, ref cursor, end))
+        {
+            return false;
+        }
+
+        cursor = SkipSpacing(text, cursor, end);
+        return cursor < end && TryReadClockAt(text, cursor, end, out clock);
+    }
+
+    private static bool FollowedByTimeZone(string text, int start, int end)
+    {
+        var cursor = SkipSpacing(text, start, end);
+        if (cursor < end && text[cursor] == '(')
+        {
+            cursor = SkipSpacing(text, cursor + 1, end);
+        }
+
+        var wordEnd = LettersEnd(text, cursor, end);
+        return wordEnd > cursor && IsAnyWord(text.AsSpan(cursor, wordEnd - cursor), timeZoneWords);
+    }
+
+    // The later time of a window lands on the day nearest the earlier one; one no later, or further on than the widest
+    // window, leaves the earlier time the start.
+    private static DateTime WindowEnd(in ClockTime later, DateTime earliestAtUtc)
+    {
+        var candidate = NearestLocalTime(later.Hour, later.Minute, earliestAtUtc);
+        var width = candidate - earliestAtUtc;
+        return width > TimeSpan.Zero && width <= MaxClockWindow ? candidate : earliestAtUtc;
+    }
+
+    // A clock time carries no date; the train starts on whichever day puts it nearest the anchor, the post, so a train
+    // posted at 23:50 for 00:10 lands on the next day.
+    private static DateTime NearestLocalTime(int hour, int minute, DateTime anchorUtc)
+    {
+        var anchorDate = anchorUtc.ToLocalTime().Date;
+        var best = anchorUtc;
         var bestGap = TimeSpan.MaxValue;
         for (var dayOffset = -1; dayOffset <= 1; dayOffset++)
         {
-            var local = DateTime.SpecifyKind(postedDate.AddDays(dayOffset).AddHours(hour).AddMinutes(minute), DateTimeKind.Local);
+            var local = DateTime.SpecifyKind(anchorDate.AddDays(dayOffset).AddHours(hour).AddMinutes(minute), DateTimeKind.Local);
             var candidate = local.ToUniversalTime();
-            var gap = (candidate - postedAtUtc).Duration();
+            var gap = (candidate - anchorUtc).Duration();
             if (gap >= bestGap)
             {
                 continue;
@@ -171,6 +264,91 @@ internal static class AnnouncementText
         }
 
         return best;
+    }
+
+    // Up to maxDigits digits with no further digit after them.
+    private static bool TryReadDigits(string text, ref int cursor, int end, int maxDigits, out int value)
+    {
+        value = 0;
+        var index = cursor;
+        while (index < end && char.IsAsciiDigit(text[index]))
+        {
+            if (index - cursor == maxDigits)
+            {
+                return false;
+            }
+
+            value = value * 10 + (text[index] - '0');
+            index++;
+        }
+
+        if (index == cursor)
+        {
+            return false;
+        }
+
+        cursor = index;
+        return true;
+    }
+
+    // "-", an en or em dash, "~", "to", "or" or "and" between the two ends of a window.
+    private static bool TrySkipRangeMark(string text, ref int cursor, int end)
+    {
+        if (cursor >= end)
+        {
+            return false;
+        }
+
+        if (text[cursor] is '-' or EnDash or EmDash or Tilde)
+        {
+            cursor++;
+            return true;
+        }
+
+        var wordEnd = LettersEnd(text, cursor, end);
+        if (wordEnd == cursor || !IsAnyWord(text.AsSpan(cursor, wordEnd - cursor), rangeWords))
+        {
+            return false;
+        }
+
+        cursor = wordEnd;
+        return true;
+    }
+
+    // Spaces and the bold, italic and code marks around a value; "~" is left, since it may mark a window or an estimate.
+    private static int SkipSpacing(string text, int start, int end)
+    {
+        var index = start;
+        while (index < end && text[index] is ' ' or '\t' or '*' or '_' or '`')
+        {
+            index++;
+        }
+
+        return index;
+    }
+
+    private static int LettersEnd(string text, int start, int end)
+    {
+        var index = start;
+        while (index < end && char.IsAsciiLetter(text[index]))
+        {
+            index++;
+        }
+
+        return index;
+    }
+
+    private static bool IsAnyWord(ReadOnlySpan<char> word, string[] words)
+    {
+        for (var index = 0; index < words.Length; index++)
+        {
+            if (word.Equals(words[index], StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // "Conductor: First Last" or "Conductor: [World] First Last", with Discord marks and spaces allowed around the
@@ -372,4 +550,8 @@ internal static class AnnouncementText
 
         return false;
     }
+
+    // A clock time on the 24-hour clock, with the index just past its text; HandTyped when it is not in HuntAlerts' own
+    // "07:45 PM" form.
+    private readonly record struct ClockTime(int Hour, int Minute, int End, bool HandTyped);
 }

@@ -46,7 +46,8 @@ internal sealed partial class AutoRide : AutoCommon
     private readonly AutoHuntSession session;
     private readonly RideProgress progress;
     private readonly FlagListener listener;
-    private readonly Announcement? announcement;
+    // Replaced only when a later post gives the start of a train announced without one.
+    private Announcement? announcement;
     private readonly Action<FlagPost> onPosted;
     private readonly Action<SpokenLine> onSpoken;
     // A newer flag, or the conductor ending the train, cuts short whatever the ride is doing besides a fight.
@@ -70,6 +71,11 @@ internal sealed partial class AutoRide : AutoCommon
     private MarkSighting engagedMark;
     private long nextHealthSampleAtMs;
     private long quietSinceMs;
+    // When the announced train is expected to set off, on the tick clock; the quiet time never counts from before it.
+    private long startClockMs;
+    // When the character reached the train's start; on a guessed start only a flag heard from then on picks a conductor.
+    private DateTime startReachedAtUtc = DateTime.MaxValue;
+    private int seenFeedVersion = -1;
     private long nextUpkeepCheckAtMs;
 
     public AutoRide(AutoHuntSession session, RideProgress progress, FlagListener listener, Announcement? announcement = null)
@@ -166,7 +172,10 @@ internal sealed partial class AutoRide : AutoCommon
         }
 
         SetConductor(ConductorIdentity.None, ConductorSource.None);
-        Diag($"Ride: the announcement names no conductor; the first player to post a flag in {StartZoneName()} from {PickWindowBeforeStart.TotalMinutes:F0} minutes before the start becomes one");
+        var from = plan.StartIsGuessed
+            ? "once the character is there, since the post gave no start time"
+            : $"from {PickWindowBeforeStart.TotalMinutes:F0} minutes before the {(plan.NamesStartWindow ? "earliest " : string.Empty)}start";
+        Diag($"Ride: the announcement names no conductor; the first player to post a flag in {StartZoneName()} {from} becomes one");
     }
 
     private void SetConductor(in ConductorIdentity identity, ConductorSource source)
@@ -207,6 +216,7 @@ internal sealed partial class AutoRide : AutoCommon
         var group = ExpansionGroups.Name(plan.Group);
         if (session.ArrivedAtTrain)
         {
+            NoteStartReached(plan);
             Diag($"Ride: already at the start of the {group} train on {plan.World.Name} from before the pause; not travelling again");
             return true;
         }
@@ -221,7 +231,7 @@ internal sealed partial class AutoRide : AutoCommon
             return false;
         }
 
-        if (plan.InProgressAt(DateTime.UtcNow))
+        if (plan.CatchUpDueAt(DateTime.UtcNow))
         {
             if (TrainRoutes.TryFor(plan, out var route))
             {
@@ -229,6 +239,10 @@ internal sealed partial class AutoRide : AutoCommon
             }
 
             Diag($"Ride: the {group} train on {plan.World.Name} is in progress, but no route is known to catch up along, since a Centurio train without a start zone could run in any of three expansions; going to its start");
+        }
+        else if (plan.StartIsGuessed)
+        {
+            Diag($"Ride: the post for the {group} train on {plan.World.Name} gave no start time, so the time since it says nothing of how far along its route the train is; going to its start and waiting there from at least {plan.LatestStartAtUtc:HH:mm}Z, {Announcement.GuessedStartGrace.TotalMinutes:F0} min after the post");
         }
 
         var journey = JourneyPlan.ToWorld(plan.World.Name, plan.AetheryteId, plan.TerritoryId, plan.NamesAetheryte ? plan.Instance : 0);
@@ -245,9 +259,24 @@ internal sealed partial class AutoRide : AutoCommon
         }
 
         session.ArrivedAtTrain = true;
-        lastFlagAtMs = IdleClockStart(plan);
+        NoteStartReached(plan);
         Diag($"Ride: at the start of the {group} train on {plan.World.Name} in {TerritoryNames.Of(Svc.ClientState.TerritoryType)}, {LeadText(plan)} ({ConditionTag()})");
         return true;
+    }
+
+    private void NoteStartReached(in Announcement plan)
+    {
+        startReachedAtUtc = DateTime.UtcNow;
+        SetStartClock(plan);
+    }
+
+    private void SetStartClock(in Announcement plan)
+    {
+        startClockMs = IdleClockStart(plan);
+        var wait = startClockMs - Environment.TickCount64;
+        Diag(wait > 0
+            ? $"Ride: the idle limit and the quiet time count from {plan.LatestStartAtUtc:HH:mm:ss}Z, {(plan.StartIsGuessed ? "the end of the grace after the post, which gave no start" : plan.NamesStartWindow ? "the later end of the start window" : "the start")}, {wait / TimeUnits.MillisecondsPerSecond}s from now"
+            : $"Ride: the train's expected start at {plan.LatestStartAtUtc:HH:mm:ss}Z has passed; the idle limit counts from now");
     }
 
     private async Task<bool> CompleteJourney(Announcement plan, string group, JourneyPlan journey, bool resumed)
@@ -255,7 +284,7 @@ internal sealed partial class AutoRide : AutoCommon
         JourneyOutcome outcome;
         try
         {
-            outcome = await TravelToWorld(journey, resumed, plan.StartAtUtc + TrainDuration);
+            outcome = await TravelToWorld(journey, resumed, plan.LatestStartAtUtc + TrainDuration);
         }
         finally
         {
@@ -408,18 +437,62 @@ internal sealed partial class AutoRide : AutoCommon
         }
     }
 
-    // The idle limit counts from the announced start, so a train reached early is not given up before it begins.
+    // The idle limit counts from the latest the train is expected to start, the later end of a window or the grace
+    // after a guessed start, so a train reached early is not given up before it begins.
     private static long IdleClockStart(in Announcement plan)
     {
-        var lead = plan.LeadAt(DateTime.UtcNow);
+        var lead = plan.LatestStartAtUtc - DateTime.UtcNow;
         var leadMs = lead > TimeSpan.Zero ? (long)lead.TotalMilliseconds : 0;
         return Environment.TickCount64 + leadMs;
     }
 
+    // A later post can give the start of a train announced without one after the ride set off; the feed then lists the
+    // train under the same id with that start, and the ride takes it for its idle clock, quiet time and conductor pick.
+    // A ride rebuilt after a data center transfer has id 0, which the feed never lists, and keeps its guess.
+    private void TakeGivenStart()
+    {
+        if (announcement is not { StartIsGuessed: true } plan)
+        {
+            return;
+        }
+
+        var feed = Plugin.Instance.Feed;
+        if (feed.Version == seenFeedVersion)
+        {
+            return;
+        }
+
+        seenFeedVersion = feed.Version;
+        if (!feed.TryFind(plan.Id, out var listed) || listed.StartIsGuessed)
+        {
+            return;
+        }
+
+        var given = plan with
+        {
+            StartAtUtc = listed.StartAtUtc,
+            StartSource = listed.StartSource,
+            EarliestStartAtUtc = listed.EarliestStartAtUtc,
+        };
+        announcement = given;
+        Diag($"Ride: a later post gave the start of the {ExpansionGroups.Name(given.Group)} train on {given.World.Name}: {LeadText(given)}; the ride waits for it from now on");
+        if (startClockMs > 0)
+        {
+            SetStartClock(given);
+        }
+    }
+
     private static string LeadText(in Announcement plan)
     {
-        var lead = plan.LeadAt(DateTime.UtcNow);
-        return lead > TimeSpan.Zero ? $"it starts in {lead.TotalMinutes:F0} min" : $"it started {(-lead).TotalMinutes:F0} min ago";
+        var nowUtc = DateTime.UtcNow;
+        if (plan.StartIsGuessed)
+        {
+            return $"its post gave no start time and is {(nowUtc - plan.StartAtUtc).TotalMinutes:F0} min old";
+        }
+
+        var lead = plan.LeadAt(nowUtc);
+        var window = plan.NamesStartWindow ? $" (window from {plan.EarliestStartAtUtc:HH:mm}Z)" : string.Empty;
+        return lead > TimeSpan.Zero ? $"it starts in {lead.TotalMinutes:F0} min{window}" : $"it started {(-lead).TotalMinutes:F0} min ago{window}";
     }
 
     private async Task FollowConductor()
@@ -434,6 +507,7 @@ internal sealed partial class AutoRide : AutoCommon
 
             if (!hasPending)
             {
+                TakeGivenStart();
                 if (IdleLimitReached())
                 {
                     EndOnSilence(IdleLimitMs());
@@ -589,9 +663,12 @@ internal sealed partial class AutoRide : AutoCommon
         return true;
     }
 
-    private static bool QualifiesAsFirstFlag(in Announcement plan, in FlagPost post)
+    // The window opens shortly before the earliest start the post gave. A guessed start gives nothing to measure from,
+    // so only a flag heard once the character is at the start counts; an older one there may be anyone's.
+    private bool QualifiesAsFirstFlag(in Announcement plan, in FlagPost post)
         => (!plan.NamesTerritory || post.TerritoryId == plan.TerritoryId)
-        && post.PostedAtUtc >= plan.StartAtUtc - PickWindowBeforeStart;
+        && post.PostedAtUtc >= plan.EarliestStartAtUtc - PickWindowBeforeStart
+        && (!plan.StartIsGuessed || post.PostedAtUtc >= startReachedAtUtc);
 
     private bool TryLatestQualifying(out FlagPost post)
     {
@@ -924,6 +1001,10 @@ internal sealed partial class AutoRide : AutoCommon
         quietSinceMs = Environment.TickCount64;
         progress.SetRidePhase(RidePhase.WaitingForFlag);
         ShowWaiting();
+        if (progress.FlagsFollowed > 0 && startClockMs > quietSinceMs)
+        {
+            Diag($"Ride: waiting before the train's expected start, {(startClockMs - quietSinceMs) / TimeUnits.MillisecondsPerSecond}s away; the quiet time counts from it, not from now");
+        }
     }
 
     private void ShowWaiting()
@@ -984,17 +1065,19 @@ internal sealed partial class AutoRide : AutoCommon
         Status = previous;
     }
 
+    // Counted from the last flag taken or the expected start, whichever is later, so a flag taken but not reached before
+    // the start does not run the limit out early.
     private bool IdleLimitReached()
-        => progress.FlagsFollowed == 0 && Environment.TickCount64 - lastFlagAtMs >= IdleLimitMs();
+        => progress.FlagsFollowed == 0 && Environment.TickCount64 - Math.Max(lastFlagAtMs, startClockMs) >= IdleLimitMs();
 
     private static long IdleLimitMs()
         => Math.Max(1, Plugin.Instance.Configuration.IdleLimitMinutes) * (long)TimeUnits.MillisecondsPerMinute;
 
-    // The loop asks only between legs, so no fight is in progress, and the quiet counts from the last new flag or
-    // from the end of the last leg, whichever came later. It starts once a flag was reached, so a train that fizzles
-    // before its first credit still ends.
+    // The loop asks only between legs, so no fight is in progress, and the quiet counts from the last new flag, from
+    // the end of the last leg or from the announced start, whichever came latest: a flag followed before the start
+    // only showed the way. It starts once a flag was reached, so a train that fizzles before its first credit still ends.
     private bool QuietEndReached()
-        => (session.MarksCredited > 0 || progress.FlagsFollowed > 0) && Environment.TickCount64 - quietSinceMs >= QuietEndMs();
+        => (session.MarksCredited > 0 || progress.FlagsFollowed > 0) && Environment.TickCount64 - Math.Max(quietSinceMs, startClockMs) >= QuietEndMs();
 
     private static long QuietEndMs()
         => Math.Max(QuietEndMinutesMin, Plugin.Instance.Configuration.QuietEndMinutes) * (long)TimeUnits.MillisecondsPerMinute;

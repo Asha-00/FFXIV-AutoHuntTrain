@@ -42,9 +42,11 @@ internal sealed partial class AutoRide
     private async Task<bool> FollowRouteUntilHeard(Announcement plan, TrainRoute route)
     {
         var elapsed = DateTime.UtcNow - plan.StartAtUtc;
-        var ahead = Math.Min((int)Math.Floor(elapsed.TotalMinutes / route.MinutesPerZone), route.Length - 1);
+        var ahead = FirstCatchUpStep(elapsed, route);
         progress.SetRidePhase(RidePhase.CatchingUp);
-        Diag($"Ride: the {ExpansionGroups.Name(plan.Group)} train on {plan.World.Name} started {elapsed.TotalMinutes:F1} min ago and has left {StartZoneName()}; at {route.MinutesPerZone:F1} min a zone it should be {ahead} zone(s) along the {route.Expansion.ShortName()} route {RouteText(route)}");
+        Diag(ahead == 0
+            ? $"Ride: the {ExpansionGroups.Name(plan.Group)} train on {plan.World.Name} started {elapsed.TotalMinutes:F1} min ago, within a zone's {route.MinutesPerZone:F1} min of counting as in progress, so it may not have left {StartZoneName()} yet; listening there first along the {route.Expansion.ShortName()} route {RouteText(route)}"
+            : $"Ride: the {ExpansionGroups.Name(plan.Group)} train on {plan.World.Name} started {elapsed.TotalMinutes:F1} min ago and has left {StartZoneName()}; at {route.MinutesPerZone:F1} min a zone it should be {ahead} zone(s) along the {route.Expansion.ShortName()} route {RouteText(route)}");
         Svc.Chat.Print($"{AhtConstants.LogPrefix} The train started {elapsed.TotalMinutes:F0} minutes ago; catching up with it along its usual route.");
         for (var step = ahead; step < route.Length; step++)
         {
@@ -96,6 +98,19 @@ internal sealed partial class AutoRide
         }
 
         return false;
+    }
+
+    // Conductors often set off a little late, so a train only just in progress is looked for in its start zone first,
+    // until one zone's time past the point it counts as in progress.
+    private static int FirstCatchUpStep(TimeSpan elapsed, in TrainRoute route)
+    {
+        var minutes = elapsed.TotalMinutes;
+        if (minutes <= Announcement.InProgressAfter.TotalMinutes + route.MinutesPerZone)
+        {
+            return 0;
+        }
+
+        return Math.Min((int)Math.Floor(minutes / route.MinutesPerZone), route.Length - 1);
     }
 
     // A zone owning no aetheryte is entered through its gateway, which has to be attuned instead.

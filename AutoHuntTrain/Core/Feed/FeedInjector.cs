@@ -57,6 +57,7 @@ internal static class FeedInjector
         }
 
         var minutes = DefaultLeadMinutes;
+        var leadGiven = false;
         var instance = 0;
         var conductor = string.Empty;
         var aetheryteName = new StringBuilder();
@@ -78,6 +79,7 @@ internal static class FeedInjector
             if (TryParseLead(word, out var lead))
             {
                 minutes = lead;
+                leadGiven = true;
                 continue;
             }
 
@@ -114,13 +116,14 @@ internal static class FeedInjector
         var newLine = Environment.NewLine;
         var body = customBody is null
             ? $"**[{world.Name}]** Hunt train starting {ClockText(startAt)}{place}{conductorText}."
-            : CompleteBody(customBody, startAt, now, conductor);
+            : CompleteBody(customBody, leadGiven ? startAt : null, now, conductor);
         var text = $"Kind: Hunt Train{newLine}Hunt: {ExpansionGroups.Name(group)}{header}{newLine}World: {world.Name}{newLine}Posted: {ClockText(now)}{newLine}{newLine}{body}";
         var currentWorldId = Worlds.TryCurrent(out var current) ? current.Id : 0u;
         var message = new HuntAlertMessage(text, TrainType, ExpansionGroups.Name(group), world.Id, currentWorldId, 0, 0, now, now.ToUnixTimeSeconds(), aetheryteId, territoryId, instance, null, null);
         var instanceText = instance > 0 ? $", instance {instance}" : string.Empty;
         var conductorNote = conductor.Length > 0 ? $", conductor {conductor}" : string.Empty;
-        Svc.Chat.Print($"{AhtConstants.LogPrefix} Injected a {ExpansionGroups.Name(group)} train on {world.Name} starting in {minutes} min{place}{instanceText}{conductorNote}.");
+        var startNote = customBody is null || leadGiven ? $"starting in {minutes} min" : "starting as its body says";
+        Svc.Chat.Print($"{AhtConstants.LogPrefix} Injected a {ExpansionGroups.Name(group)} train on {world.Name} {startNote}{place}{instanceText}{conductorNote}.");
         feed.Accept(message);
     }
 
@@ -286,12 +289,14 @@ internal static class FeedInjector
         return body;
     }
 
-    private static string CompleteBody(string body, DateTimeOffset startAt, DateTimeOffset now, string conductor)
+    // A body that gives no start of its own gets the +<minutes> one; without it the body goes as written, so the post
+    // time stands in as it does for a real post that names none.
+    private static string CompleteBody(string body, DateTimeOffset? startAt, DateTimeOffset now, string conductor)
     {
         var completed = body;
-        if (!AnnouncementText.TryReadStartTime(body, out _) && !AnnouncementText.TryReadClockTime(body, now.UtcDateTime, out _))
+        if (startAt is { } start && !GivesStart(body, now.UtcDateTime))
         {
-            completed = $"{completed}{Environment.NewLine}**Starting time**: {ClockText(startAt)}";
+            completed = $"{completed}{Environment.NewLine}**Starting time**: {ClockText(start)}";
         }
 
         if (conductor.Length > 0 && !AnnouncementText.TryReadConductor(body, out _, out _))
@@ -301,6 +306,11 @@ internal static class FeedInjector
 
         return completed;
     }
+
+    private static bool GivesStart(string body, DateTime nowUtc)
+        => AnnouncementText.TryReadStartTime(body, out _)
+            || AnnouncementText.TryReadClockTime(body, nowUtc, out _, out _)
+            || AnnouncementText.TryReadRelativeStart(body, out _, out _, out _);
 
     private static string ClockText(DateTimeOffset time)
         => time.ToLocalTime().ToString("hh:mm tt", CultureInfo.GetCultureInfo("en-US"));

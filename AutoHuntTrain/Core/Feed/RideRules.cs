@@ -130,7 +130,7 @@ internal static class RideRules
             return RideVerdict.CrossDataCenterOff;
         }
 
-        return Timing(configuration, announcement.LeadAt(nowUtc), reachability);
+        return Timing(configuration, announcement, nowUtc, reachability);
     }
 
     public static bool TryReachability(in WorldInfo target, out Reachability reachability)
@@ -157,21 +157,19 @@ internal static class RideRules
         return true;
     }
 
-    // A data center transfer takes minutes plus a queue, so a train on another data center that starts within the
-    // lead, or has already started, cannot be reached in time; and a train in progress has left its start zone.
-    private static RideVerdict Timing(Configuration configuration, TimeSpan lead, Reachability reachability)
+    // A data center transfer takes minutes plus a queue, so a train on another data center whose start, or the earlier
+    // end of its start window, is within the lead or past cannot be reached in time; and a train in progress has left
+    // its start zone. A start guessed from the post time counts from the post for the transfer, but is given the grace
+    // before it is late.
+    private static RideVerdict Timing(Configuration configuration, in Announcement announcement, DateTime nowUtc, Reachability reachability)
     {
-        if (reachability == Reachability.CrossDataCenter && lead.TotalSeconds < Math.Max(0, configuration.MinimumLeadSeconds))
+        var earliestLead = announcement.EarliestStartAtUtc - nowUtc;
+        if (reachability == Reachability.CrossDataCenter && earliestLead.TotalSeconds < Math.Max(0, configuration.MinimumLeadSeconds))
         {
             return RideVerdict.TooSoon;
         }
 
-        if (lead <= TimeSpan.Zero && -lead > Announcement.InProgressAfter)
-        {
-            return RideVerdict.TooLate;
-        }
-
-        return RideVerdict.Rideable;
+        return announcement.InProgressAt(nowUtc) ? RideVerdict.TooLate : RideVerdict.Rideable;
     }
 
     public static bool IsAllowedDataCenter(in WorldInfo world)
