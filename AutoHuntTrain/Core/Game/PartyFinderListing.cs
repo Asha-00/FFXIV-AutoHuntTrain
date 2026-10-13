@@ -117,7 +117,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
         => Svc.Condition[ConditionFlag.UsingPartyFinder] || Svc.Condition[ConditionFlag.RecruitingWorldOnly] || commencedByMessage;
 
     // Why the game's windows are better left alone right now, or null when nothing holds them back.
-    public static string? Hold()
+    private static string? Hold()
     {
         if (!Svc.ClientState.IsLoggedIn)
         {
@@ -172,6 +172,25 @@ internal sealed unsafe class PartyFinderListing : IDisposable
 
         RunLog.Info($"Party Finder: the listing is withdrawn before Recruit was pressed, as {reason}");
         Outcome = ListingOutcome.Withdrawn;
+        StandDown();
+    }
+
+    // Nothing more is clicked from here on: a step under way is dropped, and a listing that is up stays up.
+    public void Abandon(string reason)
+    {
+        if (AwaitingRecruit)
+        {
+            Withdraw(reason);
+            return;
+        }
+
+        if (!Busy)
+        {
+            return;
+        }
+
+        RunLog.Info($"Party Finder: {reason} during {step}; nothing more is clicked and the listing is left as it is");
+        endRequested = false;
         StandDown();
     }
 
@@ -327,7 +346,8 @@ internal sealed unsafe class PartyFinderListing : IDisposable
         }
     }
 
-    private string Refusal()
+    // Why a listing cannot be started right now, or empty when it can; asked again by TryBegin.
+    public string Refusal()
     {
         if (Busy)
         {
@@ -866,17 +886,18 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     private string CommentText() => Encoding.UTF8.GetString(comment, 0, commentLength);
 
     // A button the game has not drawn, has greyed out or has no click event on is never clicked. Radio buttons count
-    // as buttons here, as they do for the game.
+    // as buttons here, as they do for the game. The button's own node in the window is the one the game hides, and the
+    // one both the enabled flag and the click read, so it is checked before either.
     private static bool PressButton(AtkUnitBase* addon, uint nodeId)
     {
         var button = addon->GetComponentButtonById(nodeId);
-        if (button is null || !button->IsEnabled || button->AtkResNode is null || !button->AtkResNode->IsVisible())
+        if (button is null)
         {
             return false;
         }
 
         var owner = button->AtkComponentBase.OwnerNode;
-        if (owner is null || owner->AtkResNode.AtkEventManager.Event is null)
+        if (owner is null || !owner->AtkResNode.IsVisible() || owner->AtkResNode.AtkEventManager.Event is null || !button->IsEnabled)
         {
             return false;
         }

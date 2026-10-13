@@ -178,6 +178,7 @@ internal sealed partial class AutoHuntController
         }
 
         Stop(endListing: false);
+        LeaveListingForAlert();
         // A GM nearby is the player's call to make; auto-join must not start the next train a second later.
         var configuration = Plugin.Instance.Configuration;
         if (!configuration.IsAutoJoinActive())
@@ -206,7 +207,10 @@ internal sealed partial class AutoHuntController
             ending.Outcome ??= RideOutcome.Stopped;
             ReleaseHelpers();
             AbandonTravel();
-            SettleListingOnStop(endListing);
+            if (endListing)
+            {
+                Plugin.Instance.PartyFinderListing.RequestEnd("the ride was stopped");
+            }
         }
 
         // Pause already credited the run, and anything done since was the player's own play.
@@ -275,16 +279,11 @@ internal sealed partial class AutoHuntController
 
     private bool CanRestart() => rideTaskFactory is not null;
 
-    private static void SettleListingOnStop(bool endListing)
+    // Also when no ride is left: a listing still coming down after the chain gave up waiting on it clicks no further.
+    private static void LeaveListingForAlert()
     {
         var listing = Plugin.Instance.PartyFinderListing;
-        if (endListing)
-        {
-            listing.RequestEnd("the ride was stopped");
-            return;
-        }
-
-        listing.Withdraw("a GM alert stopped the ride");
+        listing.Abandon("a GM alert stopped the ride");
         if (listing.ListingUp)
         {
             Diag("GM alert: a Party Finder listing is up and is left for the player to end.");

@@ -109,13 +109,15 @@ internal sealed partial class AutoHuntController
         var stays = StaysForNextTrain();
         var action = stays ? null : AfterActionFor(ending);
         var wayHome = !stays && WayHomeDue();
-        if (!leaveParty && !wayHome && action is null)
+        // A listing still coming down keeps the run until it is down, so auto-join cannot start the next ride over it.
+        var awaitListing = Plugin.Instance.PartyFinderListing.Busy;
+        if (!awaitListing && !leaveParty && !wayHome && action is null)
         {
             return false;
         }
 
         progress.SetPhase(HuntPhase.Finishing);
-        RunChain(awaitListing: true, leaveParty, wayHome, action);
+        RunChain(awaitListing, leaveParty, wayHome, action);
         return true;
     }
 

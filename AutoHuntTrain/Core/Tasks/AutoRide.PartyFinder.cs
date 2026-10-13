@@ -30,19 +30,13 @@ internal sealed partial class AutoRide
 
         // A listing of the last ride may still be coming down; it is not this ride's reason to skip its own.
         var listing = Plugin.Instance.PartyFinderListing;
-        if (listing.Busy)
-        {
-            NoteListingHold("the Party Finder is still busy with the last listing");
-            return;
-        }
-
-        if (listing.ListingUp)
+        if (!listing.Busy && listing.ListingUp)
         {
             SettleListing("Ride: a Party Finder listing is already up; it is left as it is");
             return;
         }
 
-        if (PartyFinderListing.Hold() is { } hold)
+        if (listing.Refusal() is { Length: > 0 } hold)
         {
             NoteListingHold(hold);
             return;
@@ -50,6 +44,12 @@ internal sealed partial class AutoRide
 
         if (!await HumanDelay(HumanAction.PartyFinder, "Ride", interrupted) || interrupted())
         {
+            return;
+        }
+
+        if (PartyOps.InParty())
+        {
+            SettleListing("Ride: joined a party during the pause before the Party Finder listing; none is put up");
             return;
         }
 
