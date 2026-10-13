@@ -27,6 +27,17 @@ internal static class TrainFacts
         : minutes < 0 ? Loc.Plural(L.Feed.StartedAgo, -minutes)
         : Loc.T(L.Feed.StartingNow);
 
+    // Clamped at zero, so a relay clock running ahead reads as just reported rather than as a negative age.
+    public static int WholeMinutesSince(DateTime utc, DateTime nowUtc)
+        => Math.Max(0, (int)((long)(nowUtc - utc).TotalSeconds / TimeUnits.SecondsPerMinute));
+
+    // A post that gave no start says only when it was written, so it reads as its age rather than as a countdown that
+    // would call the train started.
+    public static string StartText(in Announcement announcement, DateTime nowUtc)
+        => announcement.StartIsGuessed
+            ? Loc.Plural(L.Feed.ReportedAgo, WholeMinutesSince(announcement.StartAtUtc, nowUtc))
+            : CountdownText(WholeMinutesToStart(announcement, nowUtc));
+
     // The relay's own coordinates first, else the first pair the post gives; a spot needs a known zone to be flagged in.
     public static bool TryFlagPoint(in Announcement announcement, out Vector2 coordinates)
     {

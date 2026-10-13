@@ -22,7 +22,6 @@ namespace AutoHuntTrain.Core.Game.Watchers;
 internal sealed unsafe class TeleportOfferWatcher : IDisposable
 {
     private const ushort NoOffer = 0;
-    private const uint TeleportOfferPromptRow = 166;
     private const int OffererPlaceholder = 0;
     private const int PlacePlaceholder = 1;
     private const int PromptPlaceholders = 2;
@@ -32,9 +31,6 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
     private const int NotReadyAbandonMs = 15_000;
     // A fight or a stop at the flag that outlasts this leaves the offer to the player rather than taking it stale.
     private const int HoldLimitMs = 60_000;
-
-    private PromptTemplate offerPrompt = PromptTemplate.Invalid;
-    private bool templateLoaded;
 
     private ushort offerAddonId = NoOffer;
     private long acceptAtTick;
@@ -98,10 +94,9 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
             return;
         }
 
-        EnsureTemplate();
         var prompt = SelectYesnoPrompt.Read(addon);
         Span<Range> placeholders = stackalloc Range[PromptPlaceholders];
-        if (!offerPrompt.TryMatch(prompt, placeholders))
+        if (!PartyPrompts.TeleportOffer.TryMatch(prompt, placeholders))
         {
             RunLog.Debug($"SelectYesno {addon->Id} is not a teleport offer: \"{prompt}\"");
             return;
@@ -315,30 +310,4 @@ internal sealed unsafe class TeleportOfferWatcher : IDisposable
 
     private static string FlagZoneName()
         => Plugin.Instance.Controller.TryGetFlagZone(out var territoryId) ? TerritoryNames.Of(territoryId) : "the flag's zone";
-
-    private void EnsureTemplate()
-    {
-        if (templateLoaded)
-        {
-            return;
-        }
-
-        templateLoaded = true;
-        try
-        {
-            offerPrompt = PromptTemplate.FromAddonRow(TeleportOfferPromptRow);
-        }
-        catch (Exception exception)
-        {
-            RunLog.Warning(exception, "Teleport offer: failed to read the Addon sheet prompt template.");
-        }
-
-        if (!offerPrompt.IsValid)
-        {
-            RunLog.Warning("Teleport offer: the prompt template is unavailable; teleport offers cannot be identified.");
-            return;
-        }
-
-        RunLog.Debug($"Teleport offer template: '{offerPrompt}'.");
-    }
 }

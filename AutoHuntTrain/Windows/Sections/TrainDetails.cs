@@ -166,7 +166,8 @@ internal sealed partial class TrainDetails
         Badge.DrawLeft(drawList, worldBadge, Styling.AccentBlue, x, midY);
         y += badgeHeight + RowGap * scale;
 
-        var label = Loc.T(announcement.IsSRank ? L.Details.LabelReported : L.Details.LabelStart);
+        // A post that gave no start time is shown by when it was written, as the feed card shows it.
+        var label = Loc.T(announcement.IsSRank || announcement.StartIsGuessed ? L.Details.LabelReported : L.Details.LabelStart);
         TextDraw.SmallCaps(label, new Vector2(left, y), Styling.TextMuted);
         y += TextDraw.SmallCapsSize(label).Y + LabelGap * scale;
         y = DrawStart(announcement, left, y);

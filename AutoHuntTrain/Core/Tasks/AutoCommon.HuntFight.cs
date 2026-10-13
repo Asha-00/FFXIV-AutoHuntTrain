@@ -45,8 +45,6 @@ public abstract partial class AutoCommon
     private const int MaxMarkEngagementsPerVisit = 16;
     private const byte MarkRoleTank = 1;
     private const byte MarkRoleMelee = 2;
-    private const string MarkMovementTrack = "Destination";
-    private const string MarkMovementParked = "None";
 
     private bool huntPresetEnsured;
     private bool huntPresetRefusalLogged;
@@ -614,20 +612,18 @@ public abstract partial class AutoCommon
     // Hands movement to the pathfinder without dropping the preset, so the rotation keeps attacking on the way in.
     private static bool ParkHuntPresetMovement(string preset)
     {
-        var bossMod = BossModIPC.Instance;
-        if (bossMod.CanClearTransientStrategy
-            && bossMod.AddTransientStrategy(preset, HuntCombatPreset.MovementModule, MarkMovementTrack, MarkMovementParked))
+        if (PresetMovementPark.Park(preset))
         {
             return true;
         }
 
-        bossMod.ClearActive();
+        BossModIPC.Instance.ClearActive();
         return false;
     }
 
     private void ResumeHuntPresetMovement(string preset)
     {
-        if (BossModIPC.Instance.ClearTransientStrategy(preset, HuntCombatPreset.MovementModule, MarkMovementTrack))
+        if (PresetMovementPark.Resume(preset))
         {
             return;
         }

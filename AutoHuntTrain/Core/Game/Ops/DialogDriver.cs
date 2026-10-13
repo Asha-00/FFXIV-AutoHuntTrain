@@ -1,3 +1,4 @@
+using AutoHuntTrain.Core.Game.Watchers;
 using ECommons;
 using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
@@ -5,6 +6,8 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace AutoHuntTrain.Core.Game.Ops;
 
+// Clicks through the dialogs of a conversation the plugin started. A party member's invite or teleport offer can open
+// in the middle of one, and is never answered here: those are the party watchers' or the player's to answer.
 internal static unsafe class DialogDriver
 {
     private const string SelectYesnoAddon = "SelectYesno";
@@ -15,11 +18,11 @@ internal static unsafe class DialogDriver
     private const string SelectYesnoThrottleKey = "AHT.Dialog.SelectYesno";
     private const string TalkThrottleKey = "AHT.Dialog.Talk";
 
-    public static bool ConfirmationOpen() => AddonReady(SelectYesnoAddon, out _);
+    public static bool ConfirmationOpen() => ConfirmationReady(out _);
 
     public static bool Confirm()
     {
-        if (!AddonReady(SelectYesnoAddon, out var confirmation))
+        if (!ConfirmationReady(out var confirmation))
         {
             return false;
         }
@@ -31,7 +34,7 @@ internal static unsafe class DialogDriver
 
     public static bool AnyOpen()
         => AddonReady(TalkAddon, out _)
-        || AddonReady(SelectYesnoAddon, out _)
+        || ConfirmationReady(out _)
         || AddonReady(SelectStringAddon, out _);
 
     // True while any dialog is up, clicked this frame or throttled, so the caller waits instead of starting a new conversation.
@@ -47,7 +50,7 @@ internal static unsafe class DialogDriver
             return true;
         }
 
-        if (AddonReady(SelectYesnoAddon, out var confirmation))
+        if (ConfirmationReady(out var confirmation))
         {
             if (EzThrottler.Throttle(SelectYesnoThrottleKey, ClickThrottleMs))
             {
@@ -84,6 +87,9 @@ internal static unsafe class DialogDriver
         Diag($"Dialog: choosing '{first.Text}' from a menu of {menu.EntryCount}.");
         first.Select();
     }
+
+    private static bool ConfirmationReady(out AtkUnitBase* confirmation)
+        => AddonReady(SelectYesnoAddon, out confirmation) && !PartyPrompts.Matches(confirmation);
 
     private static bool AddonReady(string name, out AtkUnitBase* addon)
         => GenericHelpers.TryGetAddonByName(name, out addon) && GenericHelpers.IsAddonReady(addon);

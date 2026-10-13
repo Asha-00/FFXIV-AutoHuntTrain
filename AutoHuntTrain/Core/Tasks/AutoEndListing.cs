@@ -1,13 +1,15 @@
+using AutoHuntTrain.Core.Game;
 using System.Threading.Tasks;
 
 namespace AutoHuntTrain.Core.Tasks;
 
 // The first link of the chain after a ride: the Party Finder listing belongs to the train's party and world, so the
-// chain lets it come down before it leaves either. The listing ends on its own steps; this only waits, for a while.
+// chain lets it come down before it leaves either. The listing ends on its own steps; this only waits, for as long as
+// those steps may take.
 internal sealed class AutoEndListing : AutoCommon
 {
     private const string Scope = "end-listing";
-    private const int WaitMs = 30_000;
+    private const int WaitMs = PartyFinderListing.LongestEndMs;
     private const int PollFrames = 10;
 
     protected override async Task Execute()

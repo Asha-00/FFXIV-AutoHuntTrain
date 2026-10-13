@@ -71,8 +71,8 @@ internal sealed class TrainChatAlert : IDisposable
     private static SeString BuildLine(in Announcement announcement)
     {
         var world = announcement.World;
-        var countdown = TrainFacts.CountdownText(TrainFacts.WholeMinutesToStart(announcement, DateTime.UtcNow));
-        var line = Loc.T(L.Notify.ChatLine, ExpansionGroups.LocalName(announcement.Group), world.Name, world.DataCenterName, RegionLabels.Name(world.Region), countdown);
+        var start = TrainFacts.StartText(announcement, DateTime.UtcNow);
+        var line = Loc.T(L.Notify.ChatLine, ExpansionGroups.LocalName(announcement.Group), world.Name, world.DataCenterName, RegionLabels.Name(world.Region), start);
         if (announcement.NamesConductor)
         {
             line = string.Concat(line, Loc.T(L.Notify.ChatConductor, Conductor.Describe(announcement.Conductor)));

@@ -1,4 +1,3 @@
-using AutoHuntTrain.Core;
 using AutoHuntTrain.Core.Feed;
 using AutoHuntTrain.Core.Localization;
 using AutoHuntTrain.Core.Train;
@@ -51,11 +50,7 @@ internal static class TrainTexts
         DateTime nowUtc,
         out Vector4 color)
     {
-        // Future relay clocks are shown as just reported rather than producing a negative age.
-        var elapsed = nowUtc - announcement.PostedAtUtc;
-        var minutes = Math.Max(
-            0,
-            (int)((long)elapsed.TotalSeconds / TimeUnits.SecondsPerMinute));
+        var minutes = TrainFacts.WholeMinutesSince(announcement.PostedAtUtc, nowUtc);
         color = minutes < FreshReportMinutes
             ? Styling.AccentMintSoft
             : minutes < ExpiringReportMinutes
@@ -78,9 +73,7 @@ internal static class TrainTexts
         DateTime nowUtc,
         out Vector4 color)
     {
-        var minutes = Math.Max(
-            0,
-            (int)((long)(nowUtc - announcement.StartAtUtc).TotalSeconds / TimeUnits.SecondsPerMinute));
+        var minutes = TrainFacts.WholeMinutesSince(announcement.StartAtUtc, nowUtc);
         color = announcement.InProgressAt(nowUtc) ? Styling.AccentAmber : Styling.TextSecondary;
         var key = HashCode.Combine(announcement.Id, StartSource.PostTime, minutes);
         if (cache.TryGet(key, out var text))

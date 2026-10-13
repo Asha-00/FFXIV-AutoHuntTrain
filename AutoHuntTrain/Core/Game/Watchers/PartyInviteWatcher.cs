@@ -18,14 +18,10 @@ namespace AutoHuntTrain.Core.Game.Watchers;
 internal sealed unsafe class PartyInviteWatcher : IDisposable
 {
     private const ushort NoInvite = 0;
-    private const uint JoinPartyPromptRow = 120;
     // A prompt clicked the frame it opens can drop the click, so the accept waits at least this long even with the
     // humanizer off.
     private const int MinimumAcceptDelayMs = 500;
     private const int NotReadyAbandonMs = 15_000;
-
-    private PromptTemplate joinPrompt = PromptTemplate.Invalid;
-    private bool templateLoaded;
 
     private ushort inviteAddonId = NoInvite;
     private long acceptAtTick;
@@ -60,9 +56,8 @@ internal sealed unsafe class PartyInviteWatcher : IDisposable
             return;
         }
 
-        EnsureTemplate();
         var prompt = SelectYesnoPrompt.Read(addon);
-        if (!joinPrompt.Matches(prompt))
+        if (!PartyPrompts.JoinParty.Matches(prompt))
         {
             RunLog.Debug($"SelectYesno {addon->Id} is not a party invite: \"{prompt}\"");
             return;
@@ -125,32 +120,6 @@ internal sealed unsafe class PartyInviteWatcher : IDisposable
         {
             RunLog.Warning(exception, "Party invite: the accept click threw.");
         }
-    }
-
-    private void EnsureTemplate()
-    {
-        if (templateLoaded)
-        {
-            return;
-        }
-
-        templateLoaded = true;
-        try
-        {
-            joinPrompt = PromptTemplate.FromAddonRow(JoinPartyPromptRow);
-        }
-        catch (Exception exception)
-        {
-            RunLog.Warning(exception, "Party invite: failed to read the Addon sheet prompt template.");
-        }
-
-        if (!joinPrompt.IsValid)
-        {
-            RunLog.Warning("Party invite: the prompt template is unavailable; invites cannot be identified.");
-            return;
-        }
-
-        RunLog.Debug($"Party invite template: join '{joinPrompt}'.");
     }
 
     private void CaptureInviter()

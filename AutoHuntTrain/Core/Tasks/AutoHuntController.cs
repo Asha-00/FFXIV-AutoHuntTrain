@@ -304,16 +304,10 @@ internal sealed partial class AutoHuntController
 
     private bool CanRestart() => rideTaskFactory is not null;
 
-    // Also when no ride is left: a listing still coming down after the chain gave up waiting on it clicks no further.
+    // Also when no ride is left: a listing still coming down clicks no further, and one that is up is left for the
+    // player, who is told so in chat.
     private static void LeaveListingForAlert()
-    {
-        var listing = Plugin.Instance.PartyFinderListing;
-        listing.Abandon("a GM alert stopped the ride");
-        if (listing.ListingUp)
-        {
-            Diag("GM alert: a Party Finder listing is up and is left for the player to end.");
-        }
-    }
+        => Plugin.Instance.PartyFinderListing.Abandon("a GM alert stopped the ride");
 
     // A stopped ride is over for good: neither record may bring it back at the next login, and a transfer Lifestream
     // still has in hand would otherwise carry the character off after the Stop.
@@ -361,12 +355,13 @@ internal sealed partial class AutoHuntController
     }
 
     // A stopped task unwinds on a later frame, and after an unload that frame may never come, so the combat preset, its
-    // dodge tuning and the pathfinder are released here as well.
+    // dodge tuning, its parked movement and the pathfinder are released here as well.
     private static void ReleaseHelpers()
     {
         BossModIPC.Instance.ClearActive();
         BossModIPC.Instance.ReleaseMovement();
         DodgeTuning.Release();
+        PresetMovementPark.Release();
         NavmeshIPC.Instance.Stop();
     }
 }

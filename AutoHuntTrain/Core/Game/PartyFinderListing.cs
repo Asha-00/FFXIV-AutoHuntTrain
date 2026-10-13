@@ -31,7 +31,6 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     private const string FinderAddonName = "LookingForGroup";
     private const string CriteriaAddonName = "LookingForGroupCondition";
     private const string DetailsAddonName = "LookingForGroupDetail";
-    private const string PromptAddonName = "SelectYesno";
     private const string OpenCommand = "/partyfinder";
     // Button node ids, as ECommons' AddonMaster knows them. The finder's button reads View Details while a listing is up.
     private const uint RecruitMembersButtonId = 46;
@@ -58,6 +57,11 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     private const int GoneConfirmMs = 3_000;
     // A listing that shows up this soon after Recruit was pressed is still the plugin's, even past the step's limit.
     private const int LateListingGraceMs = 30_000;
+    // The game takes a listing down an hour after it went up at the latest.
+    private const int ListingLifetimeMs = 60 * TimeUnits.MillisecondsPerMinute;
+
+    // The longest an end can take once asked for: the listing still going up, the hold, then every step of the end.
+    public const int LongestEndMs = ListedTimeoutMs + EndHoldLimitMs + OpenTimeoutMs + OpenTimeoutMs + StepTimeoutMs + EndedTimeoutMs;
 
     private enum Step : byte
     {
@@ -88,6 +92,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     private long lastClickAtMs;
     private long committedAtMs;
     private long goneSinceMs;
+    private long commencedAtMs;
     private uint answeredPromptId;
     private uint refusalMessageId;
     private bool openedFinder;
@@ -112,9 +117,12 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     public bool AwaitingRecruit => step >= Step.OpenFinder && step <= Step.PressRecruit;
 
     // The game raises these conditions while the character's own listing is up, and refuses to start a duty under
-    // either. Its own "recruitment commenced" message stands in for them after a Recruit the plugin pressed.
-    public bool ListingUp
-        => Svc.Condition[ConditionFlag.UsingPartyFinder] || Svc.Condition[ConditionFlag.RecruitingWorldOnly] || commencedByMessage;
+    // either. Its own "recruitment commenced" message stands in for them after a Recruit the plugin pressed, until they
+    // are seen raised.
+    public bool ListingUp => RecruitingConditionRaised() || commencedByMessage;
+
+    private static bool RecruitingConditionRaised()
+        => Svc.Condition[ConditionFlag.UsingPartyFinder] || Svc.Condition[ConditionFlag.RecruitingWorldOnly];
 
     // Why the game's windows are better left alone right now, or null when nothing holds them back.
     private static string? Hold()
@@ -175,7 +183,8 @@ internal sealed unsafe class PartyFinderListing : IDisposable
         StandDown();
     }
 
-    // Nothing more is clicked from here on: a step under way is dropped, and a listing that is up stays up.
+    // Nothing more is clicked from here on: a step under way is dropped, and a listing that is up stays up for the
+    // player to end, who is told so.
     public void Abandon(string reason)
     {
         if (AwaitingRecruit)
@@ -184,17 +193,25 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        if (!Busy)
+        endRequested = false;
+        if (Busy)
+        {
+            RunLog.Info($"Party Finder: {reason} during {step}; nothing more is clicked and the listing is left as it is");
+            StandDown();
+        }
+
+        if (!ownsListing || !ListingUp)
         {
             return;
         }
 
-        RunLog.Info($"Party Finder: {reason} during {step}; nothing more is clicked and the listing is left as it is");
-        endRequested = false;
-        StandDown();
+        ownsListing = false;
+        RunLog.Info($"Party Finder: {reason} with the listing up; it is left for the player to end");
+        PrintChat(L.Safety.PartyFinderStillUpChat);
     }
 
-    // Only a listing the plugin put up is ended; one the player had up before is never touched.
+    // Only a listing the plugin put up is ended; one the player had up before is never touched. One still going up, or
+    // one that may yet show up late, is ended once it is up.
     public void RequestEnd(string reason)
     {
         if (AwaitingRecruit)
@@ -203,7 +220,7 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        if (step == Step.AwaitListed)
+        if (step == Step.AwaitListed || (step == Step.Idle && !ownsListing && LateListingAwaited(Environment.TickCount64)))
         {
             if (!endRequested)
             {
@@ -232,18 +249,14 @@ internal sealed unsafe class PartyFinderListing : IDisposable
 
     public void Tick()
     {
-        if (!Svc.ClientState.IsLoggedIn)
-        {
-            commencedByMessage = false;
-        }
-
+        var now = Environment.TickCount64;
+        ExpireCommencedMessage(now);
         if (step == Step.Idle)
         {
-            WatchOwnListing();
+            WatchOwnListing(now);
             return;
         }
 
-        var now = Environment.TickCount64;
         try
         {
             Advance(now);
@@ -300,13 +313,14 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     }
 
     // The LogMessage rows the game prints about party recruitment, matched by id so every client language reads alike:
-    // commenced, ended (by hand, full, timed out, cancelled, not continued), nothing to end, and the refusals.
+    // commenced, ended (by hand, full, timed out, cancelled, not continued, duty gone, registration limit), nothing to
+    // end, and the refusals.
     private static Notice Classify(uint logMessageId) => logMessageId switch
     {
         979 or 980 => Notice.Commenced,
-        981 or 982 or 983 or 984 or 985 or 986 or 987 or 988 or 993 or 994 => Notice.Ended,
+        981 or 982 or 983 or 984 or 985 or 986 or 987 or 988 or 993 or 994 or 7398 or 7445 or 7451 or 7452 => Notice.Ended,
         966 or 977 => Notice.NothingToEnd,
-        954 or 956 or 957 or 959 or 961 or 962 or 963 or 964 or 965 or 967 or 974 or 978 or 1026 or 1027 or 1436 or 1437 or 7463 => Notice.Refused,
+        954 or 956 or 957 or 959 or 961 or 962 or 963 or 964 or 965 or 967 or 974 or 978 or 1026 or 1027 or 1436 or 1437 or 7463 or 7482 or 7923 or 7924 => Notice.Refused,
         _ => Notice.None,
     };
 
@@ -323,9 +337,11 @@ internal sealed unsafe class PartyFinderListing : IDisposable
         switch (notice)
         {
             case Notice.Commenced:
-                if (committedAtMs != 0 && Environment.TickCount64 - committedAtMs < LateListingGraceMs)
+                var heardAtMs = Environment.TickCount64;
+                if (LateListingAwaited(heardAtMs))
                 {
                     commencedByMessage = true;
+                    commencedAtMs = heardAtMs;
                 }
 
                 break;
@@ -385,7 +401,8 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        if (now < waitUntilMs)
+        // A loading screen is no time to open windows, and the conditions it hides would read as the listing ended.
+        if (now < waitUntilMs || (step > Step.AwaitEndHold && Loading()))
         {
             return;
         }
@@ -647,8 +664,8 @@ internal sealed unsafe class PartyFinderListing : IDisposable
             return;
         }
 
-        var prompt = RaptureAtkUnitManager.Instance()->GetAddonById((ushort)promptId);
-        if (prompt is null || !GenericHelpers.IsAddonReady(prompt) || prompt->NameString != PromptAddonName)
+        var prompt = SelectYesnoPrompt.Find((ushort)promptId);
+        if (prompt is null || !GenericHelpers.IsAddonReady(prompt))
         {
             return;
         }
@@ -782,12 +799,11 @@ internal sealed unsafe class PartyFinderListing : IDisposable
     // A listing ends without the plugin once the party is full, its time runs out or the player ends it, and a listing
     // put up later is the player's own; one gone for a moment is no longer the plugin's to end. One that shows up just
     // after its step gave up waiting is still the plugin's.
-    private void WatchOwnListing()
+    private void WatchOwnListing(long now)
     {
-        var now = Environment.TickCount64;
         if (!ownsListing)
         {
-            if (committedAtMs == 0 || now - committedAtMs >= LateListingGraceMs || !ListingUp)
+            if (!LateListingAwaited(now) || !ListingUp)
             {
                 return;
             }
@@ -823,6 +839,18 @@ internal sealed unsafe class PartyFinderListing : IDisposable
 
         ownsListing = false;
         RunLog.Info("Party Finder: the listing has ended (the party filled up, its time ran out, or it was ended by hand)");
+    }
+
+    private bool LateListingAwaited(long now) => committedAtMs != 0 && now - committedAtMs < LateListingGraceMs;
+
+    // The message stands in only until the conditions are seen raised, and never past a logout or the listing's lifetime.
+    private void ExpireCommencedMessage(long now)
+    {
+        if (commencedByMessage
+            && (!Svc.ClientState.IsLoggedIn || RecruitingConditionRaised() || now - commencedAtMs >= ListingLifetimeMs))
+        {
+            commencedByMessage = false;
+        }
     }
 
     // A loading screen is not trusted to show the conditions, so nothing is concluded from them during one.

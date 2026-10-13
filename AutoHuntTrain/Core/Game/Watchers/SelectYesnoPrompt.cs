@@ -13,6 +13,9 @@ internal static unsafe class SelectYesnoPrompt
 {
     public const string AddonName = "SelectYesno";
 
+    private static ReadOnlySpan<byte> AddonNameBytes => "SelectYesno"u8;
+
+    // Watchers look their prompt up every frame while they hold it, so the name is compared in place rather than decoded.
     public static AtkUnitBase* Find(ushort addonId)
     {
         var addon = RaptureAtkUnitManager.Instance()->GetAddonById(addonId);
@@ -21,7 +24,9 @@ internal static unsafe class SelectYesnoPrompt
             return null;
         }
 
-        return addon->NameString == AddonName ? addon : null;
+        ReadOnlySpan<byte> name = addon->Name;
+        var terminator = name.IndexOf((byte)0);
+        return (terminator < 0 ? name : name[..terminator]).SequenceEqual(AddonNameBytes) ? addon : null;
     }
 
     public static string Read(AtkUnitBase* addon)

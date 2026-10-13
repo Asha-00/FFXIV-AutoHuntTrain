@@ -801,9 +801,10 @@ internal sealed partial class AutoRide : AutoCommon
 
         if (!completed && (hasPending || conductorEnded))
         {
+            var stopped = StopLeftoverLifestream() ? " and Lifestream stopped" : string.Empty;
             Diag(conductorEnded
-                ? $"{label}: the conductor ended the train; the leg to {zoneName} is dropped"
-                : $"{label}: a newer flag or instance call arrived; the leg to {zoneName} is dropped");
+                ? $"{label}: the conductor ended the train; the leg to {zoneName} is dropped{stopped}"
+                : $"{label}: a newer flag or instance call arrived; the leg to {zoneName} is dropped{stopped}");
             return;
         }
 

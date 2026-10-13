@@ -258,17 +258,9 @@ internal sealed partial class AutoRide
         DropInstanceRequest(request, "the switch failed");
     }
 
-    // Lifestream carries on with a switch on its own, so a switch cut short is stopped there too, or it would land the
-    // character in an instance nobody wants any more, mid-way through the next leg.
     private void NoteSwitchCut(in InstanceRequest request, string label, string zoneName)
     {
-        var lifestream = LifestreamIPC.Instance;
-        var busy = lifestream.IsBusy();
-        if (busy)
-        {
-            lifestream.Abort();
-        }
-
+        var busy = StopLeftoverLifestream();
         if (InstanceSwitchSuperseded())
         {
             Diag($"{label}: a newer flag or call, or the end of the train, made the switch to instance {request.Instance} of {zoneName} moot; cut short{(busy ? " and Lifestream stopped" : string.Empty)}");
@@ -277,6 +269,20 @@ internal sealed partial class AutoRide
 
         Warn($"{label}: the switch to instance {request.Instance} of {zoneName} did not finish within {InstanceSwitchBudgetMs / TimeUnits.MillisecondsPerSecond}s{(busy ? "; Lifestream stopped" : string.Empty)}");
         DropInstanceRequest(request, "the switch ran out of time");
+    }
+
+    // Lifestream carries on with a switch on its own, so one a switch or a leg was cut short in is stopped there too, or
+    // it would land the character in an instance nobody wants any more, mid-way through the next leg. True when it was busy.
+    private static bool StopLeftoverLifestream()
+    {
+        var lifestream = LifestreamIPC.Instance;
+        if (!lifestream.IsBusy())
+        {
+            return false;
+        }
+
+        lifestream.Abort();
+        return true;
     }
 
     // A switch a leg could not make is not tried again for every flag of the call's lifetime.

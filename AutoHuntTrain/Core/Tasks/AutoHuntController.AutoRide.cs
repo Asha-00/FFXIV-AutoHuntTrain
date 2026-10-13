@@ -56,9 +56,9 @@ internal sealed partial class AutoHuntController
         return false;
     }
 
-    // Once a second while any expansion's auto-join is on and nothing runs: the soonest announced train that passes
-    // every rule is ridden. A train already taken, one whose start was refused, and anything announced before the
-    // player's last Stop are left alone. Nothing here allocates unless a ride starts.
+    // Once a second while any expansion's auto-join is on, nothing runs and no Party Finder listing is still coming down:
+    // the soonest announced train that passes every rule is ridden. A train already taken, one whose start was refused,
+    // and anything announced before the player's last Stop are left alone. Nothing here allocates unless a ride starts.
     private void TickAutoRide(long now)
     {
         if (now < nextFeedEvaluationAtMs)
@@ -68,7 +68,10 @@ internal sealed partial class AutoHuntController
 
         nextFeedEvaluationAtMs = now + FeedEvaluationIntervalMs;
         var configuration = Plugin.Instance.Configuration;
-        if (!configuration.IsAutoJoinActive() || Running || !ECommons.DalamudServices.Svc.ClientState.IsLoggedIn)
+        if (!configuration.IsAutoJoinActive()
+            || Running
+            || !ECommons.DalamudServices.Svc.ClientState.IsLoggedIn
+            || Plugin.Instance.PartyFinderListing.Busy)
         {
             return;
         }

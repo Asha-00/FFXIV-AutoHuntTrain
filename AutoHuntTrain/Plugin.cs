@@ -134,6 +134,7 @@ public sealed class Plugin : IDalamudPlugin
         Controller.Stop();
         PartyFinderListing.Dispose();
         Core.Ipc.DodgeTuning.Release();
+        Core.Ipc.PresetMovementPark.Release();
         TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
 
         PluginInterface.UiBuilder.Draw -= OnDraw;
