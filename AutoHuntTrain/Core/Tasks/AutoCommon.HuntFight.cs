@@ -45,7 +45,6 @@ public abstract partial class AutoCommon
     private const int MaxMarkEngagementsPerVisit = 16;
     private const byte MarkRoleTank = 1;
     private const byte MarkRoleMelee = 2;
-    private const string MarkMovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
     private const string MarkMovementTrack = "Destination";
     private const string MarkMovementParked = "None";
 
@@ -571,7 +570,7 @@ public abstract partial class AutoCommon
     {
         var bossMod = BossModIPC.Instance;
         if (bossMod.CanClearTransientStrategy
-            && bossMod.AddTransientStrategy(HuntCombatPreset.Name, MarkMovementModule, MarkMovementTrack, MarkMovementParked))
+            && bossMod.AddTransientStrategy(HuntCombatPreset.Name, HuntCombatPreset.MovementModule, MarkMovementTrack, MarkMovementParked))
         {
             return true;
         }
@@ -582,7 +581,7 @@ public abstract partial class AutoCommon
 
     private void ResumeHuntPresetMovement()
     {
-        if (BossModIPC.Instance.ClearTransientStrategy(HuntCombatPreset.Name, MarkMovementModule, MarkMovementTrack))
+        if (BossModIPC.Instance.ClearTransientStrategy(HuntCombatPreset.Name, HuntCombatPreset.MovementModule, MarkMovementTrack))
         {
             return;
         }

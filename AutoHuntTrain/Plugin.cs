@@ -126,6 +126,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Controller.Stop();
+        Core.Ipc.DodgeTuning.Release();
         TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
 
         PluginInterface.UiBuilder.Draw -= OnDraw;

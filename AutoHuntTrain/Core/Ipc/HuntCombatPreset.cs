@@ -19,8 +19,9 @@ internal static class HuntCombatPreset
 
     public const int Revision = 2;
 
+    public const string MovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
+
     private const string AutoTargetModule = "BossMod.Autorotation.MiscAI.AutoTarget";
-    private const string NormalMovementModule = "BossMod.Autorotation.MiscAI.NormalMovement";
     private const string WarriorModule = "BossMod.Autorotation.VeynWAR";
     private const string RotationModulePrefix = "BossMod.Autorotation.xan.";
     private const string RedMageModule = RotationModulePrefix + "RDM";
@@ -58,7 +59,7 @@ internal static class HuntCombatPreset
             writer.WriteString("Name", Name);
             writer.WriteStartObject("Modules");
             WriteModule(writer, AutoTargetModule, autoTargetTracks);
-            WriteModule(writer, NormalMovementModule, movementTracks);
+            WriteModule(writer, MovementModule, movementTracks);
             WriteModule(writer, WarriorModule, warriorTracks);
             for (var jobIndex = 0; jobIndex < rotationJobs.Length; jobIndex++)
             {

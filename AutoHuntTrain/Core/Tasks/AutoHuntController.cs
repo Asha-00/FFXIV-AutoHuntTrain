@@ -317,12 +317,13 @@ internal sealed partial class AutoHuntController
         progress.Reset();
     }
 
-    // A stopped task unwinds on a later frame, and after an unload that frame may never come, so the combat preset and
-    // the pathfinder are released here as well.
+    // A stopped task unwinds on a later frame, and after an unload that frame may never come, so the combat preset, its
+    // dodge tuning and the pathfinder are released here as well.
     private static void ReleaseHelpers()
     {
         BossModIPC.Instance.ClearActive();
         BossModIPC.Instance.ReleaseMovement();
+        DodgeTuning.Release();
         NavmeshIPC.Instance.Stop();
     }
 }
