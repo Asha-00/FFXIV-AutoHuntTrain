@@ -329,6 +329,7 @@ public abstract partial class AutoCommon
                 {
                     BossModIPC.Instance.ClearActive();
                     await SafeDismount($"{scope}-dismount");
+                    tagging.QuietSince = Environment.TickCount64;
                     continue;
                 }
 
@@ -387,6 +388,7 @@ public abstract partial class AutoCommon
 
                     await RepositionToMark(hunt, markId, $"{scope}-reposition#{repositions}");
                     outOfReachSince = 0;
+                    tagging.QuietSince = Environment.TickCount64;
                 }
 
                 await NextFrame(MarkFightTickFrames);
