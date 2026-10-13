@@ -436,7 +436,7 @@ public abstract partial class AutoCommon
         if (Svc.ClientState.TerritoryType != hunt.TerritoryId)
         {
             MarkPhase = HuntPhase.Travelling;
-            var entry = hunt.SpawnPoints.Length > 0 ? EstimateMarkHeight(hunt.TerritoryId, hunt.SpawnPoints[0]) : Vector3.Zero;
+            var entry = hunt.SpawnPoints.Length > 0 ? hunt.SpawnPoints[0] : Vector3.Zero;
             Diag($"Hunt: teleporting to {hunt.ZoneName} ({hunt.TerritoryId}) for {hunt.Name}");
             var reached = false;
             await RunWithStatusPinned(
@@ -483,18 +483,6 @@ public abstract partial class AutoCommon
 
         hunt.ResolvedPoints = [.. resolved];
         return hunt.ResolvedPoints;
-    }
-
-    // Only picks the aetheryte to land at; the real height is snapped once the zone's mesh is loaded.
-    private protected static Vector3 EstimateMarkHeight(uint territoryId, Vector3 point)
-    {
-        if (!float.IsNaN(point.Y))
-        {
-            return point;
-        }
-
-        var flat = point with { Y = 0f };
-        return ZoneAetherytes.TryFindNearest(territoryId, flat, out var aetheryte) ? point with { Y = aetheryte.Position.Y } : flat;
     }
 
     // A height hint picks the floor nearest it, so a spawn under a bridge or below a ledge is not lifted to the top layer.

@@ -91,7 +91,7 @@ internal sealed class RideLeg(FlagPost flag, string label) : AutoCommon
             {
                 if (await HumanDelay(HumanAction.Teleport, label))
                 {
-                    reached = await TeleportToTerritory(territoryId, EstimateMarkHeight(territoryId, flat), $"{label}-teleport", TeleportWatchdogMs);
+                    reached = await TeleportToTerritory(territoryId, flat, $"{label}-teleport", TeleportWatchdogMs);
                 }
             });
         if (reached || CancelToken.IsCancellationRequested)

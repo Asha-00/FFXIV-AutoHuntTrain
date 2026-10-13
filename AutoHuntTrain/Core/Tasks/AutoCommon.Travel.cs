@@ -402,33 +402,50 @@ public abstract partial class AutoCommon
             return false;
         }
 
-        if (!ZoneAetherytes.TryFindNearest(territoryId, target, out var aetheryte))
+        if (!ZoneAetherytes.TryFindLanding(territoryId, target, out var landing))
         {
             return false;
         }
 
-        var fromHere = Vector3.Distance(player.Position, target);
-        var fromAetheryte = Vector3.Distance(aetheryte.Position, target);
-        var hop = Vector3.Distance(player.Position, aetheryte.Position);
+        // On the ground, like the pick itself: an aetheryte's height is unknown.
+        var aetheryte = landing.Aetheryte;
+        var fromHere = GroundDistance.Between(player.Position, target);
+        var viaAetheryte = landing.CostMeters;
+        var hop = GroundDistance.Between(player.Position, aetheryte.Position);
         var worthIt = purpose switch
         {
-            TeleportPurpose.Shortcut => fromHere - fromAetheryte >= TeleportShortcutMinSavingMeters,
+            TeleportPurpose.Shortcut => fromHere - viaAetheryte >= TeleportShortcutMinSavingMeters,
             // A recovery that lands farther from the spot than the character already is trades one long trip for another.
-            TeleportPurpose.Recovery => hop >= TeleportRecoveryMinHopMeters && fromAetheryte < fromHere,
+            TeleportPurpose.Recovery => hop >= TeleportRecoveryMinHopMeters && viaAetheryte < fromHere,
             _ => true,
         };
         if (!worthIt)
         {
+            NoteShortcutDetour(territoryId, target, fromHere, label, purpose);
             return false;
         }
 
         Diag(purpose switch
         {
-            TeleportPurpose.Shortcut => $"{label}: {aetheryte.Name} is {fromAetheryte:F0}m from the spot against {fromHere:F0}m from here; teleporting",
-            TeleportPurpose.Recovery => $"{label}: teleporting to {aetheryte.Name} to get unstuck, {fromAetheryte:F0}m from the spot",
-            _ => $"{label}: teleporting to {aetheryte.Name} to get back onto the world, {fromAetheryte:F0}m from the spot",
+            TeleportPurpose.Shortcut => $"{label}: {aetheryte.Name} is {landing.GroundMeters:F0}m from the spot against {fromHere:F0}m from here; teleporting",
+            TeleportPurpose.Recovery => $"{label}: teleporting to {aetheryte.Name} to get unstuck, {landing.GroundMeters:F0}m from the spot",
+            _ => $"{label}: teleporting to {aetheryte.Name} to get back onto the world, {landing.GroundMeters:F0}m from the spot",
         });
         return await TeleportToAetheryte(territoryId, aetheryte, label);
+    }
+
+    // Says so when the shortcut a straight line would have taken was given up for a known climb.
+    private void NoteShortcutDetour(uint territoryId, Vector3 target, float fromHere, string label, TeleportPurpose purpose)
+    {
+        if (purpose != TeleportPurpose.Shortcut
+            || !ZoneAetherytes.TryFindNearestOnGround(territoryId, target, out var straight)
+            || straight.DetourMeters == 0
+            || fromHere - straight.GroundMeters < TeleportShortcutMinSavingMeters)
+        {
+            return;
+        }
+
+        Diag($"{label}: {straight.Aetheryte.Name} is {straight.GroundMeters:F0}m from the spot against {fromHere:F0}m from here, but a landing there costs a {straight.DetourMeters}m climb; not teleporting");
     }
 
     // A zone can hold landmasses no floor connects, and the aetheryte nearest the spot in a straight line can stand on
