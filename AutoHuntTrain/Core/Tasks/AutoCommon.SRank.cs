@@ -20,6 +20,7 @@ public abstract partial class AutoCommon
     private const float SRankStagingFloorHalfExtentMeters = 12f;
     private const float SRankStagingFloorLiftMeters = 8f;
     private const float SRankDirectionEpsilon = 1f;
+    private const int SRankArrivalGraceMs = 5 * TimeUnits.MillisecondsPerSecond;
     private const int SRankSearchTimeoutMs = 5 * TimeUnits.MillisecondsPerMinute;
     private const int SRankPullTimeoutMs = 10 * TimeUnits.MillisecondsPerMinute;
     private const int SRankScanPollMs = 250;
@@ -46,8 +47,8 @@ public abstract partial class AutoCommon
         var name = HuntMarkRegistry.NameOf(nameId);
         Status = $"Searching for {name}";
 
-        // A mark enters the object table only near the player, so the search sweeps toward it and stops the moment the
-        // exact live actor comes into view; staging then works from the actor, never from the rounded relay point.
+        // An S rank not yet in view on arrival is swept toward, stopping the moment the exact live actor appears; staging
+        // then works from the actor, never from the rounded relay point.
         var sighting = await LocateSRank(nameId, name, territoryId, reportedPoint);
         if (sighting is null)
         {
@@ -203,9 +204,12 @@ public abstract partial class AutoCommon
             out _);
     }
 
-    // Each sweep leg stops as soon as the mark comes into view, so the character never closes on an untouched S rank.
+    // Actors stream into the object table over the first moments after a zone load, so the mark gets a short grace to
+    // appear before any sweep. Each sweep leg stops as soon as it comes into view, so the character never closes on an
+    // untouched S rank.
     private async Task<MarkSighting?> LocateSRank(uint nameId, string name, uint territoryId, Vector3? reportedPoint)
     {
+        await WaitUntilTimed(() => TryFindExactSRank(nameId, out _), SRankArrivalGraceMs, "s-rank-arrival");
         if (TryFindExactSRank(nameId, out var inView))
         {
             Diag($"S rank: {name} already in view {inView.DistanceToHitbox:F0}m away at {FormatPosition(inView.Position)}");
