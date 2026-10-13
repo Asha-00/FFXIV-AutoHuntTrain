@@ -23,6 +23,8 @@ internal sealed class FeedListener : IDisposable
     private const int TickIntervalMs = 1_000;
 
     private static readonly TimeSpan DuplicateWindow = TimeSpan.FromMinutes(2);
+    // A post giving the start of a train listed without one comes within this of the first post, or is another train.
+    private static readonly TimeSpan CorrectionWindow = TimeSpan.FromMinutes(30);
     // A start further away than this is a mangled tag or a relay clock gone wrong, not a train.
     private static readonly TimeSpan MaxLead = TimeSpan.FromHours(6);
     private static readonly TimeSpan MaxAge = TimeSpan.FromHours(6);
@@ -187,7 +189,7 @@ internal sealed class FeedListener : IDisposable
             return;
         }
 
-        if (TryMergeDuplicate(announcement))
+        if (TryMergeDuplicate(announcement) || TryAdoptGivenStart(announcement))
         {
             return;
         }
@@ -224,22 +226,7 @@ internal sealed class FeedListener : IDisposable
         }
 
         var postedAt = PostedAt(message, now);
-        DateTime startAt;
-        if (AnnouncementText.TryReadStartTime(text, out var announced))
-        {
-            startAt = announced;
-            RunLog.Debug($"Feed: start time for {world.Name} read from a Discord timestamp");
-        }
-        else if (AnnouncementText.TryReadClockTime(text, postedAt, out var clock))
-        {
-            startAt = clock;
-            RunLog.Debug($"Feed: start time for {world.Name} read from the clock time in the post");
-        }
-        else
-        {
-            startAt = postedAt;
-            RunLog.Info($"Feed: no start time found in the post for {world.Name}; the post time stands in. Text: {Flatten(text)}");
-        }
+        var startAt = ReadStart(text, postedAt, world, out var earliestAt, out var source);
         if (startAt - now > MaxLead || now - startAt > MaxAge)
         {
             problem = $"the start time {startAt:yyyy-MM-dd HH:mm:ss}Z is out of range";
@@ -249,8 +236,54 @@ internal sealed class FeedListener : IDisposable
         ResolvePlace(message, out var aetheryteId, out var territoryId);
         var instance = message.Instance is > 0 and <= MaxInstance ? message.Instance : 0;
         Vector2? coordinates = message.MapLocationCoords is { } point && float.IsFinite(point.X) && float.IsFinite(point.Y) ? point : null;
-        announcement = new Announcement(nextId++, now, postedAt, world, group, startAt, aetheryteId, territoryId, instance, coordinates, ReadConductor(text, world), text);
+        announcement = new Announcement(nextId++, now, postedAt, world, group, startAt, aetheryteId, territoryId, instance, coordinates, ReadConductor(text, world), text)
+        {
+            StartSource = source,
+            EarliestStartAtUtc = earliestAt,
+        };
         return true;
+    }
+
+    // A Discord timestamp, else a clock time, else a wait after the post such as "in 10-15 minutes", else the post time,
+    // which the ride and auto-join then treat as a guess. A window's later end is the start and its earlier end is kept.
+    private static DateTime ReadStart(string text, DateTime postedAt, in WorldInfo world, out DateTime earliestAt, out StartSource source)
+    {
+        if (AnnouncementText.TryReadStartTime(text, out var announced))
+        {
+            earliestAt = announced;
+            source = StartSource.Tag;
+            RunLog.Debug($"Feed: start time for {world.Name} read from a Discord timestamp");
+            return announced;
+        }
+
+        if (AnnouncementText.TryReadClockTime(text, postedAt, out earliestAt, out var clock))
+        {
+            source = StartSource.Clock;
+            if (earliestAt < clock)
+            {
+                RunLog.Info($"Feed: start time for {world.Name} read from the clock times in the post, a window from {earliestAt:HH:mm}Z to {clock:HH:mm}Z whose later end is taken");
+            }
+            else
+            {
+                RunLog.Debug($"Feed: start time for {world.Name} read from the clock time in the post");
+            }
+
+            return clock;
+        }
+
+        if (AnnouncementText.TryReadRelativeStart(text, out var earliestMinutes, out var latestMinutes, out var phrase))
+        {
+            earliestAt = postedAt.AddMinutes(earliestMinutes);
+            source = StartSource.Relative;
+            var minutes = earliestMinutes < latestMinutes ? $"{earliestMinutes}-{latestMinutes}" : $"{latestMinutes}";
+            RunLog.Info($"Feed: start time for {world.Name} read from \"{text[phrase]}\" in the post, {minutes} min after it was posted at {postedAt:HH:mm}Z");
+            return postedAt.AddMinutes(latestMinutes);
+        }
+
+        earliestAt = postedAt;
+        source = StartSource.PostTime;
+        RunLog.Info($"Feed: no start time found in the post for {world.Name}; the post time stands in, and the train is not taken as under way until {Announcement.GuessedStartGrace.TotalMinutes:F0} min after it. Text: {Flatten(text)}");
+        return postedAt;
     }
 
     private static DateTime PostedAt(in HuntAlertMessage message, DateTime now)
@@ -340,25 +373,61 @@ internal sealed class FeedListener : IDisposable
         return false;
     }
 
-    // The same train announced again fills in what the first announcement lacked and is otherwise dropped.
+    // A train listed with a guessed start takes the start a later post gives it, keeping its id so a ride or auto-join
+    // decision already made about it still holds, and moves to its new place in start order. Of several such trains the
+    // one posted nearest the new post is taken.
+    private bool TryAdoptGivenStart(in Announcement announcement)
+    {
+        var target = -1;
+        var nearest = TimeSpan.MaxValue;
+        for (var index = 0; index < count; index++)
+        {
+            if (!items[index].StartGivenBy(announcement, CorrectionWindow))
+            {
+                continue;
+            }
+
+            var gap = (announcement.PostedAtUtc - items[index].PostedAtUtc).Duration();
+            if (gap >= nearest)
+            {
+                continue;
+            }
+
+            target = index;
+            nearest = gap;
+        }
+
+        if (target < 0)
+        {
+            return false;
+        }
+
+        var existing = items[target];
+        var corrected = FillDetails(existing, announcement) with
+        {
+            StartAtUtc = announcement.StartAtUtc,
+            StartSource = announcement.StartSource,
+            EarliestStartAtUtc = announcement.EarliestStartAtUtc,
+        };
+        RemoveAt(target);
+        Insert(corrected);
+        RunLog.Info($"Feed: a post {(announcement.PostedAtUtc - existing.PostedAtUtc).TotalMinutes:F0} min after the one for the {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name}, which gave no start, gives it; the listed train takes that start instead of a second listing: {Describe(corrected)}");
+        return true;
+    }
+
+    // The same train announced again fills in what the first announcement lacked and is otherwise dropped. A train
+    // listed with a guessed start is left to TryAdoptGivenStart when the new post gives a start, so it takes that start.
     private bool TryMergeDuplicate(in Announcement announcement)
     {
         for (var index = 0; index < count; index++)
         {
             var existing = items[index];
-            if (!existing.SameTrainAs(announcement, DuplicateWindow))
+            if (!existing.SameTrainAs(announcement, DuplicateWindow) || existing.StartGivenBy(announcement, CorrectionWindow))
             {
                 continue;
             }
 
-            var merged = existing with
-            {
-                Conductor = existing.NamesConductor ? existing.Conductor : announcement.Conductor,
-                AetheryteId = existing.NamesAetheryte ? existing.AetheryteId : announcement.AetheryteId,
-                TerritoryId = existing.NamesTerritory ? existing.TerritoryId : announcement.TerritoryId,
-                Instance = existing.NamesInstance ? existing.Instance : announcement.Instance,
-                MapCoordinates = existing.MapCoordinates ?? announcement.MapCoordinates,
-            };
+            var merged = FillDetails(existing, announcement);
             if (merged == existing)
             {
                 RunLog.Debug($"Feed: the {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name} was announced again; dropped as a duplicate");
@@ -373,6 +442,16 @@ internal sealed class FeedListener : IDisposable
 
         return false;
     }
+
+    private static Announcement FillDetails(in Announcement existing, in Announcement announcement)
+        => existing with
+        {
+            Conductor = existing.NamesConductor ? existing.Conductor : announcement.Conductor,
+            AetheryteId = existing.NamesAetheryte ? existing.AetheryteId : announcement.AetheryteId,
+            TerritoryId = existing.NamesTerritory ? existing.TerritoryId : announcement.TerritoryId,
+            Instance = existing.NamesInstance ? existing.Instance : announcement.Instance,
+            MapCoordinates = existing.MapCoordinates ?? announcement.MapCoordinates,
+        };
 
     // Kept in start order. A full ring lets go of the train that matters least to the player: one in another region
     // before one on a data center they do not ride, and the one starting last among equals.
@@ -475,6 +554,10 @@ internal sealed class FeedListener : IDisposable
                 var creature = item.CreatureNameOr("an unknown S rank");
                 RunLog.Debug($"Feed: {creature} on {item.World.Name} was reported {(nowUtc - item.PostedAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
             }
+            else if (item.StartIsGuessed)
+            {
+                RunLog.Debug($"Feed: the {ExpansionGroups.Name(item.Group)} train on {item.World.Name}, whose post gave no start, was posted {(nowUtc - item.StartAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
+            }
             else
             {
                 RunLog.Debug($"Feed: the {ExpansionGroups.Name(item.Group)} train on {item.World.Name} started {(nowUtc - item.StartAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
@@ -495,10 +578,11 @@ internal sealed class FeedListener : IDisposable
         version++;
     }
 
+    // A guessed start counts from the end of its grace, so a later post can still give the start of a train listed so.
     private static bool IsExpired(in Announcement announcement, DateTime nowUtc)
         => announcement.IsSRank
             ? SRankFeedPolicy.IsExpired(announcement, nowUtc)
-            : announcement.StartAtUtc < nowUtc - Announcement.ListedAfterStart;
+            : announcement.LatestStartAtUtc < nowUtc - Announcement.ListedAfterStart;
 
     private enum KeepPriority : byte
     {
@@ -531,7 +615,16 @@ internal sealed class FeedListener : IDisposable
         }
 
         var lead = announcement.LeadAt(DateTime.UtcNow).TotalMinutes;
+        var window = announcement.NamesStartWindow ? $"{announcement.EarliestStartAtUtc:HH:mm}-" : string.Empty;
         var conductor = announcement.NamesConductor ? $", conductor {Conductor.Describe(announcement.Conductor)}" : ", no conductor named";
-        return $"Feed: {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name} ({announcement.World.DataCenterName}) starting {announcement.StartAtUtc:HH:mm}Z ({lead:F0} min from now) in {place}{stop}{instance}{conductor}";
+        return $"Feed: {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name} ({announcement.World.DataCenterName}) starting {window}{announcement.StartAtUtc:HH:mm}Z ({lead:F0} min from now, {StartSourceText(announcement)}) in {place}{stop}{instance}{conductor}";
     }
+
+    private static string StartSourceText(in Announcement announcement) => announcement.StartSource switch
+    {
+        StartSource.Tag => "from a Discord timestamp",
+        StartSource.Clock => "from the clock time in the post",
+        StartSource.Relative => "from the wait the post gives",
+        _ => $"the post time standing in for a start the post did not give; given until {announcement.LatestStartAtUtc:HH:mm}Z to start",
+    };
 }

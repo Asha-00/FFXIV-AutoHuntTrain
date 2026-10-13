@@ -79,6 +79,10 @@ internal sealed class StoredAnnouncement
     public AnnouncementKind Kind { get; set; } = AnnouncementKind.Train;
     public uint? CreatureNameId { get; set; }
 
+    // Added with start windows and guessed starts; an older record rebuilds with the start it was saved with, taken as given.
+    public StartSource StartSource { get; set; }
+    public DateTime? EarliestStartAtUtc { get; set; }
+
     public static StoredAnnouncement From(in Announcement announcement) => new()
     {
         ReceivedAtUtc = announcement.ReceivedAtUtc,
@@ -96,6 +100,8 @@ internal sealed class StoredAnnouncement
         Message = announcement.Message ?? string.Empty,
         Kind = announcement.Kind,
         CreatureNameId = announcement.CreatureNameId,
+        StartSource = announcement.StartSource,
+        EarliestStartAtUtc = announcement.NamesStartWindow ? announcement.EarliestStartAtUtc : null,
     };
 
     // A world the client no longer knows makes the announcement unusable, so it is dropped rather than shown half built.
@@ -134,6 +140,8 @@ internal sealed class StoredAnnouncement
         {
             Kind = Kind,
             CreatureNameId = CreatureNameId,
+            StartSource = StartSource,
+            EarliestStartAtUtc = EarliestStartAtUtc is { } earliest ? DateTime.SpecifyKind(earliest, DateTimeKind.Utc) : default,
         };
 
         return true;

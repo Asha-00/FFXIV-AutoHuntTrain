@@ -20,7 +20,9 @@ internal static class TrainTexts
         out Vector4 color)
         => announcement.IsSRank
             ? ReportedAge(ref cache, announcement, nowUtc, out color)
-            : Countdown(ref cache, announcement, nowUtc, out color);
+            : announcement.StartIsGuessed
+                ? GuessedStartAge(ref cache, announcement, nowUtc, out color)
+                : Countdown(ref cache, announcement, nowUtc, out color);
 
     public static string Countdown(
         ref CachedText cache,
@@ -68,11 +70,32 @@ internal static class TrainTexts
         return cache.Set(key, Loc.Plural(L.Feed.ReportedAgo, minutes));
     }
 
-    // A ride on a train in progress catches up with it, unless there is no route to catch up along. One-off S ranks
-    // never catch up along a route, even though their compatibility StartAtUtc contains the report time.
+    // A post that gave no start says only when it was written, so the train shows its age rather than a countdown that
+    // would call it started; it turns amber once the grace after the post runs out and it counts as in progress.
+    private static string GuessedStartAge(
+        ref CachedText cache,
+        in Announcement announcement,
+        DateTime nowUtc,
+        out Vector4 color)
+    {
+        var minutes = Math.Max(
+            0,
+            (int)((long)(nowUtc - announcement.StartAtUtc).TotalSeconds / TimeUnits.SecondsPerMinute));
+        color = announcement.InProgressAt(nowUtc) ? Styling.AccentAmber : Styling.TextSecondary;
+        var key = HashCode.Combine(announcement.Id, StartSource.PostTime, minutes);
+        if (cache.TryGet(key, out var text))
+        {
+            return text;
+        }
+
+        return cache.Set(key, Loc.Plural(L.Feed.ReportedAgo, minutes));
+    }
+
+    // A ride on a train in progress catches up with it, unless there is no route to catch up along or its start was
+    // only guessed. One-off S ranks never catch up along a route, even though their compatibility StartAtUtc contains
+    // the report time.
     public static bool CatchesUp(in Announcement announcement, DateTime nowUtc)
-        => announcement.IsTrain
-            && announcement.InProgressAt(nowUtc)
+        => announcement.CatchUpDueAt(nowUtc)
             && TrainRoutes.TryFor(announcement, out _);
 
     public static string RideHint(in Announcement announcement, bool catchesUp)
