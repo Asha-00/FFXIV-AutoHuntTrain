@@ -4,7 +4,9 @@ using ECommons.Automation;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
+using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Lumina.Excel.Sheets;
 
 namespace AutoHuntTrain.Core.Game.Ops;
 
@@ -22,6 +24,38 @@ internal static unsafe class PartyOps
     // The party list holds only a party on this world; a cross-world party shows as a condition instead.
     public static bool InParty()
         => Svc.Party.Length > 1 || Svc.Condition[ConditionFlag.ParticipatingInCrossWorldPartyOrAlliance];
+
+    // A prompt shows a player by name, followed by the home world for one from another world. The party list holds a
+    // party on this world, the cross-world proxy one formed across worlds.
+    public static bool HasMemberShownAs(string shownName)
+    {
+        var party = Svc.Party;
+        for (var index = 0; index < party.Length; index++)
+        {
+            if (party[index] is { } member && ShowsPlayer(shownName, member.Name.TextValue, member.World.ValueNullable?.Name.ExtractText()))
+            {
+                return true;
+            }
+        }
+
+        if (!InfoProxyCrossRealm.IsCrossRealmParty())
+        {
+            return false;
+        }
+
+        var worlds = Svc.Data.GetExcelSheet<World>();
+        var count = InfoProxyCrossRealm.GetPartyMemberCount();
+        for (var memberIndex = 0; memberIndex < count; memberIndex++)
+        {
+            var member = InfoProxyCrossRealm.GetGroupMember((uint)memberIndex);
+            if (member is not null && ShowsPlayer(shownName, member->NameString, worlds.GetRowOrDefault((uint)member->HomeWorld)?.Name.ExtractText()))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public static bool SendLeave() => TrySend(LeaveCommand);
 
@@ -43,6 +77,25 @@ internal static unsafe class PartyOps
 
         new AddonMaster.SelectYesno((nint)addon).Yes();
         return true;
+    }
+
+    // The world can sit behind a cross-world icon the prompt text keeps or drops, so anything before it is skipped.
+    private static bool ShowsPlayer(string shownName, string name, string? world)
+    {
+        if (name.Length == 0 || !shownName.StartsWith(name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rest = shownName.AsSpan(name.Length);
+        var firstLetter = 0;
+        while (firstLetter < rest.Length && !char.IsLetter(rest[firstLetter]))
+        {
+            firstLetter++;
+        }
+
+        rest = rest[firstLetter..];
+        return rest.IsEmpty || (world is not null && rest.Equals(world, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TrySend(string line)

@@ -8,6 +8,12 @@ public enum AfterRunAction
     CloseGame,
 }
 
+public enum FlagTeleportMode : byte
+{
+    TeleportMyself,
+    WaitForTeleport,
+}
+
 public enum TrainListView
 {
     MyDataCenters,

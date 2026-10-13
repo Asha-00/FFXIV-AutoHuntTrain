@@ -6,6 +6,7 @@ public enum HumanAction : byte
     Teleport,
     Engage,
     AcceptInvite,
+    AcceptTeleport,
     LookingForGroup,
 }
 
@@ -31,6 +32,10 @@ public sealed partial class Configuration
 
     public float InviteDelayMaxSeconds { get; set; } = 3.0f;
 
+    public float TeleportOfferDelayMinSeconds { get; set; } = 1.0f;
+
+    public float TeleportOfferDelayMaxSeconds { get; set; } = 3.0f;
+
     public float LookingForGroupDelayMinSeconds { get; set; } = 2.0f;
 
     public float LookingForGroupDelayMaxSeconds { get; set; } = 6.0f;
@@ -41,7 +46,8 @@ public sealed partial class Configuration
         HumanAction.Teleport => new DelayRange(TeleportDelayMinSeconds, TeleportDelayMaxSeconds),
         HumanAction.Engage => new DelayRange(EngageDelayMinSeconds, EngageDelayMaxSeconds),
         HumanAction.AcceptInvite => new DelayRange(InviteDelayMinSeconds, InviteDelayMaxSeconds),
-        _ => new DelayRange(LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds),
+        HumanAction.AcceptTeleport => new DelayRange(TeleportOfferDelayMinSeconds, TeleportOfferDelayMaxSeconds),
+        _ =>new DelayRange(LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds),
     };
 
     public void SetDelay(HumanAction action, DelayRange range)
@@ -59,6 +65,9 @@ public sealed partial class Configuration
                 break;
             case HumanAction.AcceptInvite:
                 (InviteDelayMinSeconds, InviteDelayMaxSeconds) = range;
+                break;
+            case HumanAction.AcceptTeleport:
+                (TeleportOfferDelayMinSeconds, TeleportOfferDelayMaxSeconds) = range;
                 break;
             default:
                 (LookingForGroupDelayMinSeconds, LookingForGroupDelayMaxSeconds) = range;

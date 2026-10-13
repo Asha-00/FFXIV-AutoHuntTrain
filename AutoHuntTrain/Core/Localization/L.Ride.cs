@@ -54,5 +54,18 @@ internal static partial class L
         public static readonly LocString EndWhenAllCreditedHelp = new("ride.settings.endWhenAllCreditedHelp", "End the ride on its own once as many marks are credited as the expansion has A ranks: 17 in A Realm Reborn, 12 in every later expansion.");
 
         public static readonly LocString ChatOpenTrain = new("ride.chat.openTrain", "Open the Train page");
+
+        public static readonly LocString WaitingForTeleport = new("ride.status.waitingForTeleport", "Waiting for a teleport to {0}");
+        public static readonly LocString TravelGroup = new("ride.settings.travel", "Travel");
+        public static readonly LocString FlagTeleport = new("ride.settings.flagTeleport", "Reaching a flag's zone");
+        public static readonly LocString FlagTeleportHelp = new("ride.settings.flagTeleportHelp", "How the ride gets into the zone of a flag posted in another zone.");
+        public static readonly LocString TeleportMyselfName = new("ride.settings.teleportMyself", "Teleport myself");
+        public static readonly LocString TeleportMyselfDetail = new("ride.settings.teleportMyselfDetail", "The ride teleports itself to the attuned aetheryte best placed for the flag.");
+        public static readonly LocString WaitForTeleportName = new("ride.settings.waitForTeleport", "Wait for a teleport");
+        public static readonly LocString WaitForTeleportDetail = new("ride.settings.waitForTeleportDetail", "The ride waits until you are in the flag's zone, whether you teleport yourself, take a party member's teleport or another plugin such as Hunt Train Assistant takes you there, then travels on from where you land without teleporting again within the zone.");
+        public static readonly LocString TeleportWait = new("ride.settings.teleportWait", "Teleport wait");
+        public static readonly LocString TeleportWaitHelp = new("ride.settings.teleportWaitHelp", "How long the ride waits for that teleport before it teleports itself. At 0 s it never does, and gives the flag up after 20 minutes without one. A newer flag ends the wait at once, and the wait does not count against the time the ride allows itself to reach the flag.");
+        public static readonly LocString AcceptTeleports = new("ride.settings.acceptTeleports", "Accept party teleports");
+        public static readonly LocString AcceptTeleportsHelp = new("ride.settings.acceptTeleportsHelp", "During a ride, accept a party member's teleport offer when it leads into the zone of the flag being followed, or into a hunt zone while no flag is known. An offer that comes during a fight or while the ride waits at its flag is accepted once that is over, if that is within a minute. The ride then travels on from where the party landed. Offers from outside the party, to anywhere else or outside a ride are left for you to answer.");
     }
 }

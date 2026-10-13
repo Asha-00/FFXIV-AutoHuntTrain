@@ -64,6 +64,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DutyWatcher dutyWatcher;
     private readonly GmAlertWatcher gmAlertWatcher;
     private readonly PartyInviteWatcher partyInviteWatcher;
+    private readonly TeleportOfferWatcher teleportOfferWatcher;
     private readonly AppWindow appWindow;
     private readonly NavArrowWindow navArrowWindow = new();
     private readonly CommandInfo primaryCommand;
@@ -96,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         dutyWatcher = new DutyWatcher();
         gmAlertWatcher = new GmAlertWatcher();
         partyInviteWatcher = new PartyInviteWatcher();
+        teleportOfferWatcher = new TeleportOfferWatcher();
         Kills = new KillLedger();
 
         InitializeLocalization();
@@ -146,6 +148,7 @@ public sealed class Plugin : IDalamudPlugin
         dutyWatcher.Dispose();
         gmAlertWatcher.Dispose();
         partyInviteWatcher.Dispose();
+        teleportOfferWatcher.Dispose();
         Notifier.Dispose();
         ChatAlert.Dispose();
         Feed.Dispose();

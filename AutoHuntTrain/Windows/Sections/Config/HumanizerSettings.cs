@@ -20,6 +20,7 @@ internal static class HumanizerSettings
         new(HumanAction.Teleport, L.Humanizer.Teleport, L.Humanizer.TeleportHelp, "##aht_human_teleport_min", "##aht_human_teleport_max"),
         new(HumanAction.Engage, L.Humanizer.Engage, L.Humanizer.EngageHelp, "##aht_human_engage_min", "##aht_human_engage_max"),
         new(HumanAction.AcceptInvite, L.Humanizer.Invite, L.Humanizer.InviteHelp, "##aht_human_invite_min", "##aht_human_invite_max"),
+        new(HumanAction.AcceptTeleport, L.Humanizer.TeleportOffer, L.Humanizer.TeleportOfferHelp, "##aht_human_teleportoffer_min", "##aht_human_teleportoffer_max"),
         new(HumanAction.LookingForGroup, L.Humanizer.Shout, L.Humanizer.ShoutHelp, "##aht_human_shout_min", "##aht_human_shout_max"),
     ];
 

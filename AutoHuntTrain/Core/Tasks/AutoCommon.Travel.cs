@@ -60,7 +60,9 @@ public abstract partial class AutoCommon
 
     private enum TeleportPurpose { Shortcut, Recovery, OffMesh }
 
-    protected async Task<bool> TravelTo(uint territoryId, Vector3 destination, float arriveWithin, bool groundStalled = false)
+    // A character someone else just teleported in stands where they chose, so teleportShortcut false keeps it from
+    // hopping to another aetheryte of the zone at the start of the trip.
+    protected async Task<bool> TravelTo(uint territoryId, Vector3 destination, float arriveWithin, bool groundStalled = false, bool teleportShortcut = true)
     {
         var zoneName = TerritoryNames.Of(territoryId);
         Diag($"Travel: to {zoneName} ({territoryId}) at {FormatPosition(destination)} within {arriveWithin:F1}m, starting in territory {Svc.ClientState.TerritoryType} ({ConditionTag()})");
@@ -76,7 +78,7 @@ public abstract partial class AutoCommon
                 return false;
             }
 
-            var result = await TravelWithinZone(territoryId, destination, arriveWithin, zoneName, groundStalled);
+            var result = await TravelWithinZone(territoryId, destination, arriveWithin, zoneName, groundStalled, teleportShortcut);
             if (result != ZoneTravelResult.LeftZone)
             {
                 return result == ZoneTravelResult.Arrived;
@@ -131,7 +133,7 @@ public abstract partial class AutoCommon
         return false;
     }
 
-    private async Task<ZoneTravelResult> TravelWithinZone(uint territoryId, Vector3 destination, float arriveWithin, string zoneName, bool groundStalled)
+    private async Task<ZoneTravelResult> TravelWithinZone(uint territoryId, Vector3 destination, float arriveWithin, string zoneName, bool groundStalled, bool teleportShortcut)
     {
         await WaitForNavmeshReady(TravelNavmeshWaitMs, TravelNavmeshPollFrames);
         if (CancelToken.IsCancellationRequested)
@@ -142,7 +144,15 @@ public abstract partial class AutoCommon
         var target = SnapToFloor(destination);
         if (!Arrived(target, destination, arriveWithin))
         {
-            await TryTeleportShortcut(territoryId, target, "travel-shortcut", TeleportPurpose.Shortcut);
+            if (teleportShortcut)
+            {
+                await TryTeleportShortcut(territoryId, target, "travel-shortcut", TeleportPurpose.Shortcut);
+            }
+            else
+            {
+                Diag($"Travel: no teleport shortcut within {zoneName} on this trip, {DistanceTo(target):F0}m from the spot");
+            }
+
             await TryAethernetShortcut(territoryId, target);
         }
 

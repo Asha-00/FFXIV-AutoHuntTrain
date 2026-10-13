@@ -18,6 +18,8 @@ public abstract partial class AutoCommon : TaskBase
 
     protected void Warn(string message, [CallerFilePath] string callerFile = "") => RunLog.Warning(message, callerFile);
 
+    private protected static long SecondsSince(long startedAtMs) => (Environment.TickCount64 - startedAtMs) / TimeUnits.MillisecondsPerSecond;
+
     protected new async Task DelayMs(int milliseconds)
     {
         var deadline = Environment.TickCount64 + milliseconds;

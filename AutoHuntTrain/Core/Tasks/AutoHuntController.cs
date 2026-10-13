@@ -39,9 +39,32 @@ internal sealed partial class AutoHuntController
         && Svc.Automation.Running
         && progress.Phase is not (HuntPhase.Idle or HuntPhase.Finishing);
 
+    // A party member's teleport is taken only by a flag ride under way: never by an S rank hunt or the chain after a ride.
+    public bool OpenToTeleportOffers => OpenToParty && currentTask is AutoRide;
+
     public RideProgress Progress => progress;
 
     public AutoHuntSession? SessionSnapshot => session;
+
+    // The zone of the flag waiting to be followed or being travelled to, if any.
+    public bool TryGetFlagZone(out uint territoryId)
+    {
+        if (currentTask is AutoRide ride)
+        {
+            return ride.TryGetHeadingZone(out territoryId);
+        }
+
+        territoryId = 0;
+        return false;
+    }
+
+    public void NoteTeleportOfferAccepted(uint territoryId)
+    {
+        if (currentTask is AutoRide ride)
+        {
+            ride.NoteTeleportOfferAccepted(territoryId);
+        }
+    }
 
     private static void Diag(string message)
         => RunLog.Info(message);
