@@ -1,5 +1,4 @@
 using AutoHuntTrain.Core.External;
-using AutoHuntTrain.Core.Marks;
 using AutoHuntTrain.Core.Train;
 using AutoHuntTrain.Core.Travel;
 using Dalamud.Plugin.Ipc;
@@ -473,9 +472,7 @@ internal sealed class FeedListener : IDisposable
 
             if (item.IsSRank)
             {
-                var creature = item.CreatureNameId is > 0
-                    ? HuntMarkRegistry.NameOf(item.CreatureNameId.Value)
-                    : "an unknown S rank";
+                var creature = item.CreatureNameOr("an unknown S rank");
                 RunLog.Debug($"Feed: {creature} on {item.World.Name} was reported {(nowUtc - item.PostedAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
             }
             else
@@ -526,9 +523,7 @@ internal sealed class FeedListener : IDisposable
 
         if (announcement.IsSRank)
         {
-            var creature = announcement.CreatureNameId is > 0
-                ? HuntMarkRegistry.NameOf(announcement.CreatureNameId.Value)
-                : "an unknown S rank";
+            var creature = announcement.CreatureNameOr("an unknown S rank");
             var coordinates = announcement.MapCoordinates is { } point
                 ? $" at map ({point.X:F1}, {point.Y:F1})"
                 : string.Empty;

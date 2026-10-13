@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 
 namespace AutoHuntTrain.Core.Tasks;
 
-// Rides one HuntAlerts S-rank relay: travel to its world, aetheryte and instance; approach the reported map point;
-// wait for another player to pull the exact announced creature; join that fight; then end after its credit is settled.
-// There is deliberately no conductor, flag listener, catch-up route or fallback sweep over every known spawn point.
+// Rides one HuntAlerts S-rank relay: travel to its world, aetheryte and instance; locate and stage safely near
+// the exact live creature; wait for another player to pull it; join that fight; then end after credit is settled.
+// There is deliberately no conductor, flag listener, catch-up route or fallback sweep over known spawn points.
 internal sealed class AutoSRank : AutoCommon
 {
     private const string Scope = "s-rank";
@@ -56,17 +56,16 @@ internal sealed class AutoSRank : AutoCommon
 
             progress.SetCredits(session.MarksCredited, 1);
             Status = $"Searching for {creature}";
-            MarkOutcome outcome;
-            if (reportedPoint is { } relayedPoint)
-            {
-                Diag($"S rank: searching the reported location in {TerritoryNames.Of(announcement.TerritoryId)} for {creature} (BNpcName {nameId})");
-                outcome = await HuntReportedSRank(nameId, announcement.TerritoryId, relayedPoint);
-            }
-            else
-            {
-                Diag($"S rank: the relay has no coordinates; resolving {creature}'s live position after arrival in {TerritoryNames.Of(announcement.TerritoryId)} (BNpcName {nameId})");
-                outcome = await HuntVisibleSRank(nameId, announcement.TerritoryId);
-            }
+            Diag(
+                reportedPoint is null
+                    ? $"S rank: the relay has no coordinates; " +
+                      $"resolving {creature}'s live position after arrival in " +
+                      $"{TerritoryNames.Of(announcement.TerritoryId)} " +
+                      $"(BNpcName {nameId})"
+                    : $"S rank: searching the reported location in " +
+                      $"{TerritoryNames.Of(announcement.TerritoryId)} " +
+                      $"for {creature} (BNpcName {nameId})");
+            var outcome = await HuntSRank(nameId, announcement.TerritoryId, reportedPoint);
             ResolveMarkOutcome(creature, outcome);
         }
         catch (Exception exception)
@@ -125,20 +124,12 @@ internal sealed class AutoSRank : AutoCommon
             announcement.TerritoryId,
             announcement.Instance);
 
-        JourneyOutcome outcome;
-        try
-        {
-            session.DataCenterTransferPending = false;
-            outcome = await TravelToWorld(
-                journey,
-                resumed: session.ResumeJourney,
-                giveUpAtUtc: announcement.PostedAtUtc + SRankFeedPolicy.ListedAfterReport);
-        }
-        finally
-        {
-            session.DataCenterTransferPending = false;
-            session.ResumeJourney = false;
-        }
+        var outcome = await TravelToWorld(
+            journey,
+            resumed: false,
+            giveUpAtUtc:
+                announcement.PostedAtUtc
+                + SRankFeedPolicy.ListedAfterReport);
 
         if (CancelToken.IsCancellationRequested)
         {
@@ -154,22 +145,6 @@ internal sealed class AutoSRank : AutoCommon
 
         EndOnJourney(creature, outcome);
         return false;
-    }
-
-    // Cross-data-center S-rank restoration needs the active relay persisted alongside JourneyPlan. HuntAlerts currently
-    // sends S-rank events for the player's current data center, so refuse a cross-DC logout rather than resume only the
-    // travel and silently lose the one-off target after login.
-    private protected override Task<bool> PrepareDataCenterTransfer(WorldInfo target, string label)
-    {
-        Warn($"{label}: cross-data-center S-rank travel to {target.Name} is not supported yet");
-        Svc.Chat.PrintError($"{AhtConstants.LogPrefix} Cannot S-Hunt across data centers yet; the relay would be lost during the transfer login.");
-        return Task.FromResult(false);
-    }
-
-    private protected override void OnDataCenterTransferRequested()
-    {
-        session.CrossedDataCenter = true;
-        session.DataCenterTransferPending = true;
     }
 
     private void ResolveMarkOutcome(string creature, MarkOutcome outcome)

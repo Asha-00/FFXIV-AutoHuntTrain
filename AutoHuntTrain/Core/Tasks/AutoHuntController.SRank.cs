@@ -18,9 +18,7 @@ internal sealed partial class AutoHuntController
     public bool StartSRank(Announcement announcement)
     {
         var world = announcement.World;
-        var creature = announcement.CreatureNameId is > 0
-            ? HuntMarkRegistry.NameOf(announcement.CreatureNameId.Value)
-            : "the S rank";
+        var creature = announcement.CreatureNameOr("the S rank");
 
         if (!announcement.IsSRank)
         {
@@ -39,14 +37,9 @@ internal sealed partial class AutoHuntController
             return false;
         }
 
-        if (!RideRules.TryReachability(announcement.World, out var reachability))
+        if (!RideRules.TryReachability(announcement.World, out _))
         {
             return RefuseSRank(announcement, creature, "the announced world is not one this client knows");
-        }
-
-        if (reachability == Reachability.CrossDataCenter)
-        {
-            return RefuseSRank(announcement, creature, "cross-data-center S-Hunts are not supported");
         }
 
         var verdict = RideRules.EvaluateManual(announcement, out _);

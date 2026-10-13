@@ -1,6 +1,8 @@
 using AutoHuntTrain.Core.Train;
 using AutoHuntTrain.Core.Travel;
+using AutoHuntTrain.Core.Marks;
 using System.Numerics;
+
 
 namespace AutoHuntTrain.Core.Feed;
 
@@ -36,7 +38,10 @@ internal readonly record struct Announcement(
 
     public bool IsTrain => Kind == AnnouncementKind.Train;
     public bool IsSRank => Kind == AnnouncementKind.SRank;
-    public bool NamesCreature => CreatureNameId is > 0;
+    public string CreatureNameOr(string fallback)
+        => CreatureNameId is > 0
+            ? HuntMarkRegistry.NameOf(CreatureNameId.Value)
+            : fallback;
     public bool NamesConductor => Conductor.IsSet;
     public bool NamesAetheryte => AetheryteId != 0;
     public bool NamesTerritory => TerritoryId != 0;

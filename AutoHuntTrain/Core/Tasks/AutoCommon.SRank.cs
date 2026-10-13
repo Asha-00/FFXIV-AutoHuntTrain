@@ -24,12 +24,12 @@ public abstract partial class AutoCommon
     private const int SRankPullTimeoutMs = 10 * TimeUnits.MillisecondsPerMinute;
     private const int SRankScanPollMs = 250;
 
-    // Searches only HuntAlerts' reported point for the exact announced BNpcName. The generic train hunt is deliberately
-    // not used: it would merge every known spawn point and may immediately engage when the user disabled WaitForPull.
-    private protected async Task<MarkOutcome> HuntReportedSRank(
+    // Locates only the exact announced S rank. Reported coordinates provide optional context, while the live actor
+    // supplies the staging position, exact identity and pull state.
+    private protected async Task<MarkOutcome> HuntSRank(
         uint nameId,
         uint territoryId,
-        Vector3 reportedPoint)
+        Vector3? reportedPoint)
     {
         if (CancelToken.IsCancellationRequested)
         {
@@ -55,56 +55,26 @@ public abstract partial class AutoCommon
         }
 
         var gameObjectId = sighting.Value.GameObjectId;
-        var discrepancy = HorizontalDistance(reportedPoint, sighting.Value.Position);
-        Diag($"S rank: {name}'s live position is {discrepancy:F0}m from the reported point; using the live actor to choose a safe staging position");
+        if (reportedPoint is { } point)
+        {
+            var discrepancy =
+                HorizontalDistance(
+                    point,
+                    sighting.Value.Position);
+
+            Diag(
+                $"S rank: {name}'s live position is " +
+                $"{discrepancy:F0}m from the reported point; " +
+                "using the live actor to choose a safe staging position");
+        }
+        else
+        {
+            Diag(
+                $"S rank: no coordinates were relayed; " +
+                $"using {name}'s live position to choose " +
+                "a safe staging point");
+        }
         if (!await StageNearSRank(nameId, name, territoryId, gameObjectId, sighting.Value, reportedPoint))
-        {
-            return CancelToken.IsCancellationRequested ? MarkOutcome.Cancelled : MarkOutcome.Unreachable;
-        }
-
-        if (!TryRefreshExactSRank(nameId, gameObjectId, out var staged))
-        {
-            Diag($"S rank: {name} disappeared while approaching the safe staging point");
-            return MarkOutcome.NotFound;
-        }
-
-        var pulled = await WaitForSRankPull(nameId, name, sighting.Value);
-        if (pulled is null)
-        {
-            return CancelToken.IsCancellationRequested ? MarkOutcome.Cancelled : MarkOutcome.NotFound;
-        }
-
-        Diag($"S rank: {name} was pulled; joining the fight");
-        return await HuntSightedMark(nameId, territoryId, pulled.Value);
-    }
-
-    // A coordinate-free relay can still be followed because S ranks are visible in the object table throughout their
-    // zone. The live actor position is used only as a staging destination; exact NameId/GameObjectId tracking and the
-    // mandatory external-pull gate remain unchanged.
-    private protected async Task<MarkOutcome> HuntVisibleSRank(uint nameId, uint territoryId)
-    {
-        if (CancelToken.IsCancellationRequested)
-        {
-            return MarkOutcome.Cancelled;
-        }
-
-        if (Svc.ClientState.TerritoryType != territoryId)
-        {
-            Warn($"S rank: expected territory {territoryId}, but the character is in {Svc.ClientState.TerritoryType}");
-            return MarkOutcome.Unreachable;
-        }
-
-        MarkPhase = HuntPhase.Searching;
-        var name = HuntMarkRegistry.NameOf(nameId);
-        Status = $"Locating {name} in {TerritoryNames.Of(territoryId)}";
-        var sighting = await WaitForExactSRank(nameId, name, SRankSearchTimeoutMs, "in the announced zone");
-        if (sighting is null)
-        {
-            return CancelToken.IsCancellationRequested ? MarkOutcome.Cancelled : MarkOutcome.NotFound;
-        }
-
-        var gameObjectId = sighting.Value.GameObjectId;
-        if (!await StageNearSRank(nameId, name, territoryId, gameObjectId, sighting.Value, fallbackPoint: null))
         {
             return CancelToken.IsCancellationRequested ? MarkOutcome.Cancelled : MarkOutcome.Unreachable;
         }
@@ -124,7 +94,6 @@ public abstract partial class AutoCommon
         Diag($"S rank: {name} was pulled; joining the fight");
         return await HuntSightedMark(nameId, territoryId, pulled.Value);
     }
-
     private async Task<bool> StageNearSRank(
         uint nameId,
         string name,
