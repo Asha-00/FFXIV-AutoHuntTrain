@@ -25,6 +25,7 @@ internal sealed class FeedListener : IDisposable
     private static readonly TimeSpan DuplicateWindow = TimeSpan.FromMinutes(2);
     // A post giving the start of a train listed without one comes within this of the first post, or is another train.
     private static readonly TimeSpan CorrectionWindow = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan CorrectedStartLimit = TimeSpan.FromHours(1);
     // A start further away than this is a mangled tag or a relay clock gone wrong, not a train.
     private static readonly TimeSpan MaxLead = TimeSpan.FromHours(6);
     private static readonly TimeSpan MaxAge = TimeSpan.FromHours(6);
@@ -382,7 +383,7 @@ internal sealed class FeedListener : IDisposable
         var nearest = TimeSpan.MaxValue;
         for (var index = 0; index < count; index++)
         {
-            if (!items[index].StartGivenBy(announcement, CorrectionWindow))
+            if (!GivesStartOf(announcement, items[index]))
             {
                 continue;
             }
@@ -422,7 +423,7 @@ internal sealed class FeedListener : IDisposable
         for (var index = 0; index < count; index++)
         {
             var existing = items[index];
-            if (!existing.SameTrainAs(announcement, DuplicateWindow) || existing.StartGivenBy(announcement, CorrectionWindow))
+            if (!existing.SameTrainAs(announcement, DuplicateWindow) || GivesStartOf(announcement, existing))
             {
                 continue;
             }
@@ -442,6 +443,9 @@ internal sealed class FeedListener : IDisposable
 
         return false;
     }
+
+    private static bool GivesStartOf(in Announcement announcement, in Announcement listed)
+        => listed.StartGivenBy(announcement, CorrectionWindow, CorrectedStartLimit);
 
     private static Announcement FillDetails(in Announcement existing, in Announcement announcement)
         => existing with

@@ -83,13 +83,14 @@ internal readonly record struct Announcement(
 
     // A post with no start is often followed by one that gives it, such as "starting in 10 minutes"; that post is the
     // same train when it is for the same world and group and was written within the window. A start before the first
-    // post can only be a misread time.
-    public bool StartGivenBy(in Announcement later, TimeSpan window)
+    // post can only be a misread time, and one further on than the limit after it is a later train's.
+    public bool StartGivenBy(in Announcement later, TimeSpan window, TimeSpan startLimit)
         => StartIsGuessed
             && later.IsTrain
             && !later.StartIsGuessed
             && later.World.Id == World.Id
             && later.Group == Group
             && (later.PostedAtUtc - PostedAtUtc).Duration() <= window
-            && later.StartAtUtc >= StartAtUtc;
+            && later.StartAtUtc >= StartAtUtc
+            && later.StartAtUtc - StartAtUtc <= startLimit;
 }

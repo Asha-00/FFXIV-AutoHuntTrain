@@ -25,13 +25,14 @@ internal static partial class AnnouncementText
     // May stand between the cue and the amount, as in "in about 10 minutes" or "within the next 10 minutes". "About" on
     // its own is no cue, since "takes about 20 minutes" gives a length.
     private static readonly string[] fillerWords = ["about", "around", "approx", "approximately", "roughly", "like", "maybe", "just", "only", "another", "the", "next"];
-    // Right after the amount these make it a pace, an age or a length, as in "5 min per zone", "10 min ago" or "2 min
-    // between pulls".
+    // Right after the amount these make it a pace, an age or a length, as in "5 min per zone", "10 min ago", "2 min
+    // between pulls" or "~45 min run".
     private static readonly string[] vetoWords =
     [
         "per", "each", "every", "a", "an", "ago", "late", "later", "early", "earlier", "behind", "long", "break", "breaks",
-        "after", "before", "past", "apart", "of", "between",
+        "after", "before", "past", "apart", "of", "between", "run", "runs", "total",
     ];
+    private static readonly string[] lengthWords = ["for", "take", "takes", "taking", "last", "lasts", "lasting", "duration", "length"];
     // After a bare "m" these make it metres, as in "~50m north".
     private static readonly string[] distanceWords = ["away", "north", "south", "east", "west"];
     private static readonly string[] untilWords = ["until", "till", "til"];
@@ -299,7 +300,8 @@ internal static partial class AnnouncementText
         return wordEnd > cursor && text.AsSpan(cursor, wordEnd - cursor).Equals(expected, StringComparison.OrdinalIgnoreCase);
     }
 
-    // A cue word right before the amount, with at most a couple of filler words between, or a "~" as in "~15m".
+    // A cue word right before the amount, with at most a couple of filler words between, or a "~" as in "~15m" unless
+    // it follows a length word, as in "runs for ~45 min", where it only stands for "about".
     private static bool HasLeadingCue(string text, int lineStart, int amountStart)
     {
         var cursor = amountStart - 1;
@@ -309,7 +311,7 @@ internal static partial class AnnouncementText
             {
                 if (IsEstimateMark(text, cursor, lineStart))
                 {
-                    return true;
+                    return !FollowsLengthWord(text, lineStart, cursor);
                 }
 
                 cursor--;
@@ -356,6 +358,18 @@ internal static partial class AnnouncementText
         }
 
         return before < lineStart || (text[before] != Tilde && !char.IsAsciiDigit(text[before]));
+    }
+
+    private static bool FollowsLengthWord(string text, int lineStart, int markIndex)
+    {
+        var wordEnd = PreviousWordEnd(text, lineStart, markIndex);
+        while (wordEnd > lineStart && text[wordEnd - 1] == Colon)
+        {
+            wordEnd = PreviousWordEnd(text, lineStart, wordEnd - 1);
+        }
+
+        var wordStart = PreviousWordStart(text, lineStart, wordEnd);
+        return wordEnd > wordStart && IsAnyWord(text.AsSpan(wordStart, wordEnd - wordStart), lengthWords);
     }
 
     private enum Following : byte
