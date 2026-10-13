@@ -65,6 +65,14 @@ internal sealed class TrainNotifier : IDisposable
 
     private void OnAnnounced(Announcement announcement)
     {
+        // S ranks have their own urgency and manual pull-safety semantics. Until they receive dedicated notification
+        // settings, keep the existing train notification preferences train-only.
+        if (announcement.IsSRank)
+        {
+            RunLog.Debug($"Notify: S rank on {announcement.World.Name} is not notified by the train notifier");
+            return;
+        }
+
         var configuration = Plugin.Instance.Configuration;
         if (!configuration.NotifyOpenWindow && !configuration.NotifyFlashTaskbar)
         {

@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <em>Hunt trains, ridden for you. Built on Dalamud.</em>
+  <em>Hunt trains and one-off S-rank hunts, handled for you. Built on Dalamud.</em>
 </p>
 
 ---
@@ -22,10 +22,13 @@
 
 Hears a hunt train being called anywhere in your region, gets your character to the start aetheryte on that world, follows the conductor's flags from mark to mark, and lands a hit on every A rank before the crowd deletes it.
 
+S-rank relays appear in the same feed as one-off hunts that travel safely to the live mark and wait for another player to pull.
+
 ## Features
 
 - **Rides announced trains**: HuntAlerts detects the trains; this plugin lists them from every region under a view you pick (My data centers, My region or Everywhere), each with a countdown, a region tag when it runs outside yours, and a Ride button that takes any train in your region, on any data center, and says why it is off when it cannot.
-- **Train details**: click a train for its start time and countdown, start zone, aetheryte, conductor, post time and the full announcement cleaned for reading, with buttons to ride it, flag its start on the map, open the Party Finder on Hunts, point an on-screen arrow at the start, or relay a one-line summary (with `<flag>`) to any chat channel.
+- **Runs one-off S-Hunts**: S-rank relays appear alongside trains with an S-Hunt button. The plugin travels to the announced world, zone and instance, locates the exact live S rank, aims for a safe staging point about 30 yalms from the mark, dismounts, waits for another player to pull, joins the fight and ends after credit is recorded. Relays without coordinates are still usable: the plugin sweeps the S rank's known spawn points until it comes into view. S-Hunts can visit another world on the current data center, but do not travel across data centers.
+- **Hunt details**: click a train or S-rank relay for its world, destination, timing and cleaned announcement text. Train details include the conductor and scheduled start; S-rank details include the exact creature and report time. Available actions include starting the ride or S-Hunt, opening the reported map location when coordinates are available, opening the Party Finder, setting an on-screen navigation arrow, and relaying a one-line summary to chat.
 - **Train notifications**: a chat line with a link to the train's details and an optional game sound, and, for a train you could ride on your allowed data centers, the Train page opening by itself and the taskbar flashing while the game is in the background. Switch HuntAlerts' own chat alert and banner off to avoid doubles.
 - **Auto-join**: off by default; switch it on per expansion to have trains joined without a click, limited to your allowed data centers, with or without data center transfers, and with the lead time a train on another data center needs before auto-join commits. A GM alert switches it off.
 - **Gets you there**: world change, data center travel and instance switching through Lifestream, then the plugin's own teleport and flight to the start aetheryte.
@@ -73,6 +76,7 @@ The plugin needs a few helpers to be installed and loaded: movement, combat, tra
 | `/aht snooze [<minutes>]` | Suspend auto-join and the train notifications for the snooze length set in Settings, or for the minutes given |
 | `/aht snooze off` | Lift the snooze |
 | `/aht inject <World> <DT\|EW\|SHB\|Centurio> [<aetheryte>] [i<n>] [+<minutes>] [conductor:<First Last>] [body:<text>]` | Push a made-up train announcement through the same intake as HuntAlerts, on a world in any region, so the rules, the details and the whole ride can be tried with no real train, e.g. `/aht inject Raiden DT Wachunpelo +5 conductor:Pandora Rainfall`. Everything after `body:` is the Discord post, with `\n` for a line break (debug helper) |
+| `/aht inject srank <World> <creature name> <x> <y> [aetheryte] [i<n>] [body:text]` | Push a test S-rank relay through the same intake as HuntAlerts so its feed row, details and one-off hunt can be tested without a live relay. Coordinates are the reported map location; `i<n>` supplies an optional instance. This is a debug helper. |
 | `/aht target` | Log targeted NPC's BaseId (debug helper) |
 | `/aht goto <territory> <x> <y> <z>` | Travel to a point, `/aht goto stop` cancels (debug helper) |
 | `/aht goto <world> [<aetheryte>] [i<n>]` | Travel to a world in your region, and on it to a named aetheryte and instance, e.g. `/aht goto Zalera Wachunpelo i2` (debug helper) |

@@ -8,17 +8,17 @@ using System.Numerics;
 
 namespace AutoHuntTrain.Core.Feed;
 
-// Turns HuntAlerts' announcements into trains waiting to be ridden: each one folded to its expansion group and world,
-// kept in start order until twenty minutes past its start. The relay's fields are untrusted, so an announcement carries
-// only what checked out. Alerts may arrive off the game thread; every one is moved onto it before it touches the ring.
+// Turns HuntAlerts' train and S-rank announcements into hunts waiting to be ridden. Relay fields are untrusted, so an
+// announcement carries only what checked out. Alerts may arrive off the game thread; every one is moved onto it before
+// it touches the ring.
 internal sealed class FeedListener : IDisposable
 {
-    // Every region's trains are kept, so the ring holds a few hours of them; eviction favours the player's own.
+    // Every region's announcements are kept; eviction favours the player's own region and allowed data centers.
     public const int Capacity = 48;
 
     private const string EventName = "HuntAlerts.OnHuntAlertMessageReceived";
     private const string TrainType = "new_hunt";
-    private const string RankSType = "srank";
+    internal const string RankSType = "srank";
     private const int MaxInstance = 9;
     private const int TickIntervalMs = 1_000;
 
@@ -56,7 +56,7 @@ internal sealed class FeedListener : IDisposable
         SaveIfChanged();
     }
 
-    // Trains saved before a reload come back without notifying again; the ones long past their start stay gone.
+    // Announcements saved before a reload come back without notifying again; expired entries stay gone.
     private void RestoreSaved()
     {
         var saved = FeedStore.Load();
@@ -64,12 +64,17 @@ internal sealed class FeedListener : IDisposable
         var restored = 0;
         for (var index = 0; index < saved.Length; index++)
         {
-            if (saved[index] is not { } stored || stored.StartAtUtc < nowUtc - Announcement.ListedAfterStart)
+            if (saved[index] is not { } stored || !stored.TryRebuild(nextId, out var announcement))
             {
                 continue;
             }
 
-            if (stored.TryRebuild(nextId, out var announcement) && Insert(announcement))
+            if (IsExpired(announcement, nowUtc))
+            {
+                continue;
+            }
+
+            if (Insert(announcement))
             {
                 nextId++;
                 restored++;
@@ -79,7 +84,7 @@ internal sealed class FeedListener : IDisposable
         savedVersion = version;
         if (restored > 0)
         {
-            RunLog.Info($"Feed: restored {restored} train(s) saved before the reload");
+            RunLog.Info($"Feed: restored {restored} announcement(s) saved before the reload");
         }
     }
 
@@ -96,7 +101,7 @@ internal sealed class FeedListener : IDisposable
 
     public int Count => count;
 
-    // The id the next announcement will get; every train already in the ring has a lower one.
+    // The id the next announcement will get; every item already in the ring has a lower one.
     public int NextId => nextId;
 
     // Bumps on every change, so a view rebuilds what it derives from the ring only when the ring changed.
@@ -104,7 +109,7 @@ internal sealed class FeedListener : IDisposable
 
     public bool IsFeedLoaded => feedLoaded;
 
-    // Ordered by start time, soonest first.
+    // Trains retain their start-time ordering; S ranks use their report time as their compatible sort timestamp.
     public Announcement this[int index] => items[index];
 
     public bool TryFind(int id, out Announcement announcement)
@@ -124,7 +129,7 @@ internal sealed class FeedListener : IDisposable
         return false;
     }
 
-    // Once a second: the plugin list is re-read, and trains long past their start leave the ring.
+    // Once a second: the plugin list is re-read, and expired trains and S-rank relays leave the ring.
     public void Tick()
     {
         var now = Environment.TickCount64;
@@ -145,7 +150,28 @@ internal sealed class FeedListener : IDisposable
         var type = message.HuntType ?? string.Empty;
         if (string.Equals(type, RankSType, StringComparison.OrdinalIgnoreCase))
         {
-            RunLog.Info($"Feed: an S rank was announced on world {message.HuntWorldId} ({message.HuntKind}); S ranks are not ridden yet");
+            var receivedAtUtc = DateTime.UtcNow;
+            var id = nextId;
+            if (!SRankAnnouncementBuilder.TryBuild(message, id, receivedAtUtc, out var sRank, out var sRankProblem))
+            {
+                RunLog.Warning($"Feed: dropped an S-rank announcement, {sRankProblem}");
+                return;
+            }
+            Prune(sRank.ReceivedAtUtc);
+
+            if (TryMergeSRankDuplicate(sRank))
+            {
+                return;
+            }
+
+            nextId++;
+            if (!Insert(sRank))
+            {
+                return;
+            }
+
+            RunLog.Info(Describe(sRank));
+            Announced?.Invoke(sRank);
             return;
         }
 
@@ -291,6 +317,29 @@ internal sealed class FeedListener : IDisposable
         return new ConductorIdentity(name, world.Id);
     }
 
+    // A repeated relay for the same S rank, world, territory and instance adds no useful information.
+    // The live actor supplies the current position after arrival, so retain the original row and expiry.
+    private bool TryMergeSRankDuplicate(
+        in Announcement announcement)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            var existing = items[index];
+            if (!SRankFeedPolicy.SameTarget(
+                    existing,
+                    announcement))
+            {
+                continue;
+            }
+
+            RunLog.Debug(
+                $"Feed: repeated S-rank relay on {announcement.World.Name} was ignored");
+            return true;
+        }
+
+        return false;
+    }
+
     // The same train announced again fills in what the first announcement lacked and is otherwise dropped.
     private bool TryMergeDuplicate(in Announcement announcement)
     {
@@ -411,18 +460,25 @@ internal sealed class FeedListener : IDisposable
 
     private void Prune(DateTime nowUtc)
     {
-        var cutoff = nowUtc - Announcement.ListedAfterStart;
         var kept = 0;
         for (var index = 0; index < count; index++)
         {
             var item = items[index];
-            if (item.StartAtUtc < cutoff)
+            if (!IsExpired(item, nowUtc))
             {
-                RunLog.Debug($"Feed: the {ExpansionGroups.Name(item.Group)} train on {item.World.Name} started {(nowUtc - item.StartAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
+                items[kept++] = item;
                 continue;
             }
 
-            items[kept++] = item;
+            if (item.IsSRank)
+            {
+                var creature = item.CreatureNameOr("an unknown S rank");
+                RunLog.Debug($"Feed: {creature} on {item.World.Name} was reported {(nowUtc - item.PostedAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
+            }
+            else
+            {
+                RunLog.Debug($"Feed: the {ExpansionGroups.Name(item.Group)} train on {item.World.Name} started {(nowUtc - item.StartAtUtc).TotalMinutes:F0} minutes ago and leaves the list");
+            }
         }
 
         if (kept == count)
@@ -438,6 +494,11 @@ internal sealed class FeedListener : IDisposable
         count = kept;
         version++;
     }
+
+    private static bool IsExpired(in Announcement announcement, DateTime nowUtc)
+        => announcement.IsSRank
+            ? SRankFeedPolicy.IsExpired(announcement, nowUtc)
+            : announcement.StartAtUtc < nowUtc - Announcement.ListedAfterStart;
 
     private enum KeepPriority : byte
     {
@@ -456,10 +517,20 @@ internal sealed class FeedListener : IDisposable
 
     private static string Describe(in Announcement announcement)
     {
-        var lead = announcement.LeadAt(DateTime.UtcNow).TotalMinutes;
         var place = announcement.NamesTerritory ? TerritoryNames.Of(announcement.TerritoryId) : "an unknown zone";
         var stop = announcement.NamesAetheryte && ZoneAetherytes.TryFindById(announcement.AetheryteId, out _, out var aetheryte) ? $" at {aetheryte.Name}" : string.Empty;
         var instance = announcement.NamesInstance ? $" instance {announcement.Instance}" : string.Empty;
+
+        if (announcement.IsSRank)
+        {
+            var creature = announcement.CreatureNameOr("an unknown S rank");
+            var coordinates = announcement.MapCoordinates is { } point
+                ? $" at map ({point.X:F1}, {point.Y:F1})"
+                : string.Empty;
+            return $"Feed: S rank {creature} on {announcement.World.Name} ({announcement.World.DataCenterName}), reported {announcement.PostedAtUtc:HH:mm}Z in {place}{stop}{instance}{coordinates}";
+        }
+
+        var lead = announcement.LeadAt(DateTime.UtcNow).TotalMinutes;
         var conductor = announcement.NamesConductor ? $", conductor {Conductor.Describe(announcement.Conductor)}" : ", no conductor named";
         return $"Feed: {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name} ({announcement.World.DataCenterName}) starting {announcement.StartAtUtc:HH:mm}Z ({lead:F0} min from now) in {place}{stop}{instance}{conductor}";
     }

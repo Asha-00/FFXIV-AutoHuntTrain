@@ -47,7 +47,14 @@ internal static class ReadyState
                 return new Info(Kind.Paused, Styling.AccentAmber, Styling.AccentAmberSoft, FontAwesomeIcon.Pause, Loc.T(L.Train.TitlePaused), detail);
             }
 
-            return new Info(Kind.Running, Styling.AccentBlue, Styling.AccentBlueSoft, FontAwesomeIcon.Train, Loc.T(L.Train.TitleRiding), ActivityLabel(controller));
+            var sRank = controller.SessionSnapshot?.IsSRank == true;
+            return new Info(
+                Kind.Running,
+                Styling.AccentBlue,
+                Styling.AccentBlueSoft,
+                sRank ? FontAwesomeIcon.Crosshairs : FontAwesomeIcon.Train,
+                sRank ? Loc.T(L.Feed.SHunt) : Loc.T(L.Train.TitleRiding),
+                ActivityLabel(controller));
         }
 
         if (!ExternalPlugins.AllRequiredInstalled())
@@ -100,7 +107,8 @@ internal static class ReadyState
     // The label already says where a catch-up is, so the detail says who the ride is waiting to hear from.
     public static string ActivityDetail(AutoHuntController controller)
     {
-        if (controller.Progress.CatchingUp)
+        var sRank = controller.SessionSnapshot?.IsSRank == true;
+        if (!sRank && controller.Progress.CatchingUp)
         {
             return ConductorLine.Get(controller.Progress);
         }
@@ -110,7 +118,9 @@ internal static class ReadyState
             return mark.Line;
         }
 
-        return CurrentFlag.TryGet(controller, out var flag) ? flag.Line : controller.Status;
+        return !sRank && CurrentFlag.TryGet(controller, out var flag)
+            ? flag.Line
+            : controller.Status;
     }
 
     public static string PhaseLabel(HuntPhase phase) => phase switch

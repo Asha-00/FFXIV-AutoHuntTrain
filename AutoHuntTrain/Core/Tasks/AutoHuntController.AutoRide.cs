@@ -6,8 +6,8 @@ internal sealed partial class AutoHuntController
 {
     private const int FeedEvaluationIntervalMs = 1_000;
 
-    // Every train auto-join or the player has already taken, as many as the feed can hold, so auto-join never swaps
-    // back and forth between two trains when the player stops each one.
+    // Every announcement auto-join or the player has already taken, as many as the feed can hold, so auto-join never
+    // swaps back and forth between two trains when the player stops each one. Manual S-Hunts use the same taken ring.
     private readonly int[] takenAnnouncementIds = new int[FeedListener.Capacity];
 
     private long nextFeedEvaluationAtMs;
@@ -83,6 +83,12 @@ internal sealed partial class AutoHuntController
         for (var index = 0; index < feed.Count; index++)
         {
             var announcement = feed[index];
+            // S ranks share the feed and manual action UI, but train auto-join must never start one implicitly.
+            if (announcement.IsSRank)
+            {
+                continue;
+            }
+
             if (AutoJoinSkips(announcement.Id))
             {
                 continue;

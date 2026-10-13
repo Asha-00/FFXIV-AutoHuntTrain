@@ -204,7 +204,7 @@ internal sealed class HistoryPage
 
         var padX = PadX * scale;
         var midY = origin.Y + size.Y * 0.5f;
-        var textX = DrawRideIcon(origin.X + padX, midY);
+        var textX = DrawRunIcon(record, origin.X + padX, midY);
         var when = RelativeTime(record.EndedAtUtc);
         var job = string.IsNullOrEmpty(record.JobAbbreviation) ? NoValue : record.JobAbbreviation;
         var detail = Loc.T(L.History.RowDetail, WhereText(record.WorldName, record.DataCenterName), job, Formatting.Elapsed(record.Duration));
@@ -246,6 +246,11 @@ internal sealed class HistoryPage
             x += Badge.DrawLeft(drawList, OutcomeLabel(outcome), OutcomeColor(outcome), x, midY) + gap;
         }
 
+        if (record.IsSRank)
+        {
+            x += Badge.DrawLeft(drawList, Loc.T(L.Feed.SHunt), Styling.AccentNebula, x, midY) + gap;
+        }
+
         if (record.ResolveGroup() is { } group)
         {
             Badge.DrawLeft(drawList, GroupLabels.Name(group), GroupLabels.Color(group), x, midY);
@@ -271,12 +276,13 @@ internal sealed class HistoryPage
     };
 
     // Returns where the row's text starts; the icon is centred in a fixed column so every row's text lines up.
-    private static float DrawRideIcon(float x, float midY)
+    private static float DrawRunIcon(RunRecord record, float x, float midY)
     {
         var scale = ImGuiHelpers.GlobalScale;
         var column = IconColumn * scale;
-        var iconSize = TextDraw.IconSize(FontAwesomeIcon.Train);
-        TextDraw.Icon(FontAwesomeIcon.Train, new Vector2(x + (column - iconSize.X) * 0.5f, midY - iconSize.Y * 0.5f), Styling.TextDim);
+        var icon = record.IsSRank ? FontAwesomeIcon.Crosshairs : FontAwesomeIcon.Train;
+        var iconSize = TextDraw.IconSize(icon);
+        TextDraw.Icon(icon, new Vector2(x + (column - iconSize.X) * 0.5f, midY - iconSize.Y * 0.5f), Styling.TextDim);
         return x + column + 10f * scale;
     }
 

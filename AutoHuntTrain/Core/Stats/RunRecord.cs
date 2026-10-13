@@ -15,6 +15,8 @@ public sealed class RunRecord
     public string DataCenterName { get; set; } = "";
     public ExpansionKind? Expansion { get; set; }
     public ExpansionGroup? Group { get; set; }
+    // Older history files lack this field and therefore deserialize it as false, preserving their train presentation.
+    public bool IsSRank { get; set; }
     public bool CrossedDataCenter { get; set; }
     public RideOutcome? Outcome { get; set; }
 

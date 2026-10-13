@@ -10,10 +10,10 @@ using System.Numerics;
 
 namespace AutoHuntTrain.Windows.Sections;
 
-// The announced trains the picked view shows, soonest first: group, region when it is not the player's, world,
-// countdown, an In progress mark once the train has left its start, how far away the world is, an Auto mark when auto-join would take the train, the conductor when the
-// announcement named one, and a Ride button that says why it is off. A click anywhere else on a row opens the train's details. Verdicts are refreshed a few times a second
-// rather than every frame, because each one asks Lifestream whether it is busy.
+// The HuntAlerts announcements the picked view shows: expansion, region when it is not the player's, world, event
+// status, reachability and a manual action. Trains keep their countdown, conductor and Ride action; S ranks show their
+// report age, exact creature and S-Hunt action. A click anywhere else on a row opens its details. Verdicts are refreshed
+// a few times a second rather than every frame, because each one asks Lifestream whether it is busy.
 internal static class FeedCard
 {
     public const int NoTrain = 0;
@@ -35,6 +35,7 @@ internal static class FeedCard
     private static readonly CachedText[] worldLines = new CachedText[FeedListener.Capacity];
     private static readonly CachedText[] countdowns = new CachedText[FeedListener.Capacity];
     private static readonly CachedText[] conductorLines = new CachedText[FeedListener.Capacity];
+    private static readonly CachedText[] creatureLines = new CachedText[FeedListener.Capacity];
     private static readonly RideVerdict[] verdicts = new RideVerdict[FeedListener.Capacity];
     private static readonly Reachability[] reachabilities = new Reachability[FeedListener.Capacity];
     private static readonly bool[] listed = new bool[FeedListener.Capacity];
@@ -48,7 +49,7 @@ internal static class FeedCard
     private static int verdictsVersion = -1;
     private static TrainListView verdictsView;
 
-    // The id of the train whose row was clicked, or NoTrain.
+    // The id of the announcement whose row was clicked, or NoTrain.
     public static int Draw(Plugin plugin)
     {
         var feed = plugin.Feed;
@@ -92,7 +93,7 @@ internal static class FeedCard
         return opened;
     }
 
-    // How many trains the picked view shows, so the page can show its empty state instead of an empty card.
+    // How many announcements the picked view shows, so the page can show its empty state instead of an empty card.
     public static int ListedCount(FeedListener feed)
     {
         RefreshVerdicts(feed, DateTime.UtcNow);
@@ -132,7 +133,8 @@ internal static class FeedCard
         for (var index = 0; index < feed.Count; index++)
         {
             verdicts[index] = RideRules.EvaluateManual(feed[index], out reachabilities[index]);
-            autoJoined[index] = verdicts[index] == RideVerdict.Rideable
+            autoJoined[index] = feed[index].IsTrain
+                && verdicts[index] == RideVerdict.Rideable
                 && !controller.AutoJoinSkips(feed[index].Id)
                 && RideRules.EvaluateAutoRules(feed[index], nowUtc, reachabilities[index]) == RideVerdict.Rideable;
             listed[index] = TrainListFilter.Shows(feed[index], view);
@@ -159,8 +161,9 @@ internal static class FeedCard
         var top = y + (rowHeight - lineHeight - LineGap * scale - captionHeight) * 0.5f;
         var verdict = verdicts[index];
         var rideable = verdict == RideVerdict.Rideable;
-        var label = Loc.T(L.Feed.Ride);
-        var buttonWidth = PillButton.Width(label, FontAwesomeIcon.Train);
+        var label = Loc.T(announcement.IsSRank ? L.Feed.SHunt : L.Feed.Ride);
+        var icon = announcement.IsSRank ? FontAwesomeIcon.Crosshairs : FontAwesomeIcon.Train;
+        var buttonWidth = PillButton.Width(label, icon);
         var buttonHeight = RideButtonHeight * scale;
         var buttonOrigin = new Vector2(x + width - buttonWidth, y + (rowHeight - buttonHeight) * 0.5f);
         var textRight = buttonOrigin.X - ButtonGap * scale;
@@ -173,11 +176,11 @@ internal static class FeedCard
 
         ImGui.SetCursorScreenPos(buttonOrigin);
         var clicked = PillButton.Draw(RideButtonId, label, Styling.AccentMint, rideable ? PillButton.Emphasis.Filled : PillButton.Emphasis.Ghost,
-            FontAwesomeIcon.Train, rideable, RideButtonHeight, rideable ? TrainTexts.RideHint(catchesUp[index]) : null);
+            icon, rideable, RideButtonHeight, rideable ? TrainTexts.RideHint(announcement, catchesUp[index]) : null);
         ImGui.PopID();
         if (clicked)
         {
-            plugin.Controller.StartRide(announcement);
+            plugin.Controller.StartAnnouncement(announcement);
         }
         else if (!rideable && Hit.HoveringRect(buttonOrigin, buttonOrigin + new Vector2(buttonWidth, buttonHeight)))
         {
@@ -197,10 +200,10 @@ internal static class FeedCard
         using (Fonts.PushCaption())
         {
             var cursorX = textX;
-            var countdown = TrainTexts.Countdown(ref countdowns[index], announcement, nowUtc, out var color);
-            TextDraw.At(countdown, new Vector2(cursorX, captionY), color);
-            cursorX += TextDraw.Measure(countdown).X + ChipGap * scale;
-            if (announcement.InProgressAt(nowUtc))
+            var status = TrainTexts.Status(ref countdowns[index], announcement, nowUtc, out var color);
+            TextDraw.At(status, new Vector2(cursorX, captionY), color);
+            cursorX += TextDraw.Measure(status).X + ChipGap * scale;
+            if (announcement.IsTrain && announcement.InProgressAt(nowUtc))
             {
                 cursorX += Badge.DrawLeft(drawList, Loc.T(L.Feed.InProgress), Styling.AccentAmber, cursorX, captionY + captionHeight * 0.5f) + ChipGap * scale;
             }
@@ -212,9 +215,17 @@ internal static class FeedCard
                 cursorX += Badge.DrawLeft(drawList, Loc.T(L.Feed.AutoMarker), Styling.AccentMint, cursorX, captionY + captionHeight * 0.5f) + ChipGap * scale;
             }
 
-            if (announcement.NamesConductor && cursorX < textRight)
+            if (cursorX < textRight)
             {
-                TextDraw.At(TextDraw.Truncate(ConductorText(index, announcement), textRight - cursorX), new Vector2(cursorX, captionY), Styling.TextDim);
+                var detail = announcement.IsSRank
+                    ? CreatureText(index, announcement)
+                    : announcement.NamesConductor
+                        ? ConductorText(index, announcement)
+                        : string.Empty;
+                if (detail.Length > 0)
+                {
+                    TextDraw.At(TextDraw.Truncate(detail, textRight - cursorX), new Vector2(cursorX, captionY), Styling.TextDim);
+                }
             }
         }
 
@@ -223,7 +234,7 @@ internal static class FeedCard
         return y + rowHeight;
     }
 
-    // The row up to its Ride button, lit while hovered; drawn before the row's text so the light sits behind it.
+    // The row up to its action button, lit while hovered; drawn before the row's text so the light sits behind it.
     private static bool DrawRowHit(ImDrawListPtr drawList, float x, float y, float right, float rowHeight)
     {
         var inset = RowInsetX * ImGuiHelpers.GlobalScale;
@@ -258,5 +269,27 @@ internal static class FeedCard
         }
 
         return conductorLines[index].Set(announcement.Id, Loc.T(L.Feed.ConductorNamed, Conductor.Describe(announcement.Conductor)));
+    }
+
+    private static string CreatureText(int index, in Announcement announcement)
+    {
+        if (creatureLines[index].TryGet(announcement.Id, out var line))
+        {
+            return line;
+        }
+
+        var creature =
+            announcement.CreatureNameOr(string.Empty);
+
+        if (creature.Length == 0)
+        {
+            return creatureLines[index].Set(announcement.Id, string.Empty);
+        }
+        var zone = announcement.NamesTerritory ? TerritoryNames.Of(announcement.TerritoryId) : string.Empty;
+        var instance = announcement.NamesInstance ? $" i{announcement.Instance}" : string.Empty;
+        var detail = zone.Length > 0
+            ? $"{creature} · {zone}{instance}"
+            : $"{creature}{instance}";
+        return creatureLines[index].Set(announcement.Id, detail);
     }
 }

@@ -17,6 +17,7 @@ internal enum RideVerdict : byte
     AutoJoinOff,
     NotAllowedDataCenter,
     CrossDataCenterOff,
+    SRankCrossDataCenter,
     TooSoon,
     TooLate,
 }
@@ -29,15 +30,27 @@ internal enum Reachability : byte
     OutOfRegion,
 }
 
-// Whether an announced train can be ridden. A Ride button click is refused only by what makes a ride impossible
-// right now; auto-join also needs the player's rules: the expansion's auto-join switch, the snooze, the allowed data
-// centers, rides across data centers and the clock.
+// Whether an announcement can be acted on. A manual Ride or S-Hunt is refused only by what makes it impossible
+// right now; S-Hunts additionally stay within the current data center. Train auto-join also needs the player's rules:
+// the expansion switch, snooze, allowed data centers, cross-data-center setting and clock.
 internal static class RideRules
 {
     public static RideVerdict EvaluateManual(in Announcement announcement, out Reachability reachability)
     {
         var placement = EvaluatePlacement(announcement, ignoreRunningRide: false, out reachability);
-        return placement != RideVerdict.Rideable ? placement : EvaluateCharacter();
+        if (placement != RideVerdict.Rideable)
+        {
+            return placement;
+        }
+
+        // World Visit within the current data center is supported. Data-center travel is not: S ranks are short-lived,
+        // and a transfer logs the character out, losing the active one-off run unless it receives separate persistence.
+        if (announcement.IsSRank && reachability == Reachability.CrossDataCenter)
+        {
+            return RideVerdict.SRankCrossDataCenter;
+        }
+
+        return EvaluateCharacter();
     }
 
     public static RideVerdict EvaluateAuto(in Announcement announcement, DateTime nowUtc, out Reachability reachability)
@@ -188,6 +201,7 @@ internal static class RideRules
         RideVerdict.AutoJoinOff => "auto-join is off for its expansion group",
         RideVerdict.NotAllowedDataCenter => "its data center is not an allowed one",
         RideVerdict.CrossDataCenterOff => "auto-join across data centers is off",
+        RideVerdict.SRankCrossDataCenter => "S-Hunts can visit another world on this data center, but not another data center",
         RideVerdict.TooSoon => "it starts sooner than the lead time a data center transfer needs",
         RideVerdict.TooLate => "it is already in progress",
         _ => "its world is unknown",

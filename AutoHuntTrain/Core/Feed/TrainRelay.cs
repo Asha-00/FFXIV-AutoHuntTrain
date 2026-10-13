@@ -8,9 +8,9 @@ using System.Text;
 
 namespace AutoHuntTrain.Core.Feed;
 
-// Ported from HuntAlerts' RelayChannels: a one-line summary of a train posted to a chat channel, as in
-// "Dawntrail train on Siren! Kozama'uka (9.0, 12.0) i2 - Ok'Hanu", with <flag> in place of the coordinates when the
-// map flag was placed on the train's start first.
+// Posts a one-line summary of a train or S-rank relay to a chat channel. A train reads, for example,
+// "Dawntrail train on Siren! Kozama'uka (9.0, 12.0) i2 - Ok'Hanu". An S rank uses its exact creature name instead of
+// an expansion train label. <flag> replaces the coordinates when the map flag was placed on the announced spot first.
 internal static class TrainRelay
 {
     // The game refuses a chat line longer than this many UTF-8 bytes.
@@ -38,6 +38,12 @@ internal static class TrainRelay
             return false;
         }
 
+        if (announcement.IsSRank && announcement.CreatureNameId is not > 0)
+        {
+            RunLog.Warning($"Relay: the S-rank announcement on {announcement.World.Name} names no creature and was not posted");
+            return false;
+        }
+
         var flagged = withFlag
             && TrainFacts.TryFlagPoint(announcement, out var point)
             && MapFlag.TrySetFlag(announcement.TerritoryId, point);
@@ -46,19 +52,27 @@ internal static class TrainRelay
         try
         {
             Chat.SendMessage(line);
-            RunLog.Info($"Relay: posted the {ExpansionGroups.Name(announcement.Group)} train on {announcement.World.Name} to {command}{(flagged ? " with the map flag" : string.Empty)}");
+            var creature = announcement.CreatureNameOr(string.Empty);
+            var subject = announcement.IsSRank
+                ? $"S rank {creature}"
+                : $"{ExpansionGroups.Name(announcement.Group)} train";
+            RunLog.Info($"Relay: posted {subject} on {announcement.World.Name} to {command}{(flagged ? " with the map flag" : string.Empty)}");
             return true;
         }
         catch (Exception exception)
         {
-            RunLog.Warning(exception, $"Relay: posting the train on {announcement.World.Name} to {command} failed");
+            var kind = announcement.IsSRank ? "S rank" : "train";
+            RunLog.Warning(exception, $"Relay: posting the {kind} on {announcement.World.Name} to {command} failed");
             return false;
         }
     }
 
     public static string BuildText(in Announcement announcement, bool flagged)
     {
-        var builder = new StringBuilder(Loc.T(L.Details.RelayText, ExpansionGroups.LocalName(announcement.Group), announcement.World.Name));
+        var heading = announcement.IsSRank
+            ? SRankHeading(announcement)
+            : Loc.T(L.Details.RelayText, ExpansionGroups.LocalName(announcement.Group), announcement.World.Name);
+        var builder = new StringBuilder(heading);
         var zone = TrainFacts.StartZone(announcement);
         var coordinates = flagged ? FlagPlaceholder
             : TrainFacts.TryFlagPoint(announcement, out var point) ? FormatCoordinates(point)
@@ -95,6 +109,14 @@ internal static class TrainRelay
             ", ",
             coordinates.Y.ToString(CoordinateFormat, CultureInfo.InvariantCulture),
             ")");
+
+    private static string SRankHeading(
+        in Announcement announcement)
+        => Loc.T(
+            L.Details.RelayTextSRank,
+            announcement.CreatureNameOr(
+                Loc.T(L.Details.NotNamed)),
+            announcement.World.Name);
 
     private static string Command(RelayChannel channel)
         => (uint)channel < (uint)commands.Length ? commands[(int)channel] : commands[(int)RelayChannel.Party];

@@ -279,7 +279,8 @@ public abstract partial class AutoCommon
             }
 
             var busy = lifestream.IsBusy();
-            if (busy || !loggedIn)
+            var zoning = Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51];
+            if (busy || !loggedIn || zoning)
             {
                 idleSinceMs = now;
             }

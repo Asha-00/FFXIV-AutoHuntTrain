@@ -86,9 +86,10 @@ internal static class RunningPanel
     {
         var scale = ImGuiHelpers.GlobalScale;
         var progress = controller.Progress;
+        var sRank = controller.SessionSnapshot?.IsSRank == true;
         CurrentFlag.View flag = default;
         var body = CurrentMark.TryGet(controller, out var mark) ? HeroBody.Mark
-            : CurrentFlag.TryGet(controller, out flag) ? HeroBody.Flag
+            : !sRank && CurrentFlag.TryGet(controller, out flag) ? HeroBody.Flag
             : HeroBody.Status;
         var size = new Vector2(ImGui.GetContentRegionAvail().X, HeroCardHeight(body));
         var origin = ImGui.GetCursorScreenPos();
@@ -106,7 +107,7 @@ internal static class RunningPanel
         var padX = PadX * scale;
         var ringRadius = size.Y * 0.5f - RingInset * scale;
         var ringCenter = new Vector2(origin.X + padX + ringRadius, origin.Y + size.Y * 0.5f);
-        DrawRideRing(ringCenter, ringRadius, accent, active, progress);
+        DrawRideRing(ringCenter, ringRadius, accent, active, progress, sRank);
 
         var columnX = ringCenter.X + ringRadius + RingGap * scale;
         var columnWidth = end.X - padX - columnX;
@@ -139,9 +140,12 @@ internal static class RunningPanel
         y += barHeight + BarGap * scale;
         using (Fonts.PushCaption())
         {
-            TextDraw.At(TextDraw.Truncate(ProgressLine(progress), columnWidth), new Vector2(columnX, y), Styling.WithAlpha(accentSoft, 0.9f));
-            y += ImGui.GetTextLineHeight() + ConductorLineGap * scale;
-            TextDraw.At(TextDraw.Truncate(ConductorLine.Get(progress), columnWidth), new Vector2(columnX, y), Styling.TextDim);
+            TextDraw.At(TextDraw.Truncate(ProgressLine(progress, sRank), columnWidth), new Vector2(columnX, y), Styling.WithAlpha(accentSoft, 0.9f));
+            if (!sRank)
+            {
+                y += ImGui.GetTextLineHeight() + ConductorLineGap * scale;
+                TextDraw.At(TextDraw.Truncate(ConductorLine.Get(progress), columnWidth), new Vector2(columnX, y), Styling.TextDim);
+            }
         }
 
         ImGui.Dummy(size);
@@ -219,13 +223,14 @@ internal static class RunningPanel
 
     // The ring fills with the marks credited once the ride knows how many its expansion has; until then it only shows
     // that the ride is moving.
-    private static void DrawRideRing(Vector2 center, float radius, Vector4 accent, bool active, RideProgress progress)
+    private static void DrawRideRing(Vector2 center, float radius, Vector4 accent, bool active, RideProgress progress, bool sRank)
     {
         var thickness = 6f * ImGuiHelpers.GlobalScale;
         ProgressRing.Track(center, radius, thickness, Styling.WithAlpha(Styling.BorderDim, 0.7f));
-        if (progress.ExpectedMarks > 0)
+        var expected = sRank ? 1 : progress.ExpectedMarks;
+        if (expected > 0)
         {
-            ProgressRing.Fill(center, radius, thickness, progress.MarksCredited / (float)progress.ExpectedMarks, Styling.WithAlpha(accent, 0.85f));
+            ProgressRing.Fill(center, radius, thickness, progress.MarksCredited / (float)expected, Styling.WithAlpha(accent, 0.85f));
         }
 
         if (active)
@@ -233,12 +238,17 @@ internal static class RunningPanel
             ProgressRing.Sweep(center, radius, thickness, accent, Styling.PulseOrbit, MathF.PI * 0.6f, 1f);
         }
 
-        ProgressRing.CenterIcon(center, FontAwesomeIcon.Train, Styling.TextDim, radius * 0.55f);
+        ProgressRing.CenterIcon(center, sRank ? FontAwesomeIcon.Crosshairs : FontAwesomeIcon.Train, Styling.TextDim, radius * 0.55f);
     }
 
     // Flags followed and marks credited, rebuilt only when a count changes.
-    private static string ProgressLine(RideProgress progress)
+    private static string ProgressLine(RideProgress progress, bool sRank)
     {
+        if (sRank)
+        {
+            return CreditedLine.Get(progress);
+        }
+
         var flags = progress.FlagsFollowed;
         var key = ((long)flags << 32) | (uint)progress.MarksCredited;
         if (progressText.TryGet(key, out var line))
