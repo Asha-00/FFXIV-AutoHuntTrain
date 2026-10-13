@@ -15,6 +15,12 @@ internal static class HuntSpawns
     private const float SameSpotMeters = 15f;
     private const float SameSpotSquared = SameSpotMeters * SameSpotMeters;
 
+    // Every zone with spawn points, ascending.
+    public static ReadOnlySpan<ushort> Zones => HuntSpawnTable.TerritoryIds;
+
+    public static bool HasZone(uint territoryId)
+        => territoryId <= ushort.MaxValue && HuntSpawnTable.TerritoryIds.BinarySearch((ushort)territoryId) >= 0;
+
     // True when the registry lists the mark in territoryId, or in one zone at all for 0, and that zone has points of its
     // rank; an expansion-wide mark has no zone to search.
     public static bool Covers(uint nameId, uint territoryId) => ZoneOf(nameId, territoryId) != 0;

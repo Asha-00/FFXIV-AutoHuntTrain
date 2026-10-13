@@ -118,6 +118,7 @@ internal sealed class SettingsPage
                 break;
             case Tab.Ride:
                 ConductorSettings.Draw(configuration);
+                TravelSettings.Draw(configuration);
                 EngagementSettings.Draw(configuration);
                 AfterRideSettings.Draw(configuration);
                 break;

@@ -27,7 +27,7 @@ internal sealed partial class AutoRide : AutoCommon
     private const int WaitPollFrames = 10;
     private const int MarkPollFrames = 6;
     // Room for a teleport, an instance change and the longest flight a zone allows, well inside the idle limit.
-    private const int LegBudgetMs = 20 * TimeUnits.MillisecondsPerMinute;
+    internal const int LegBudgetMs = 20 * TimeUnits.MillisecondsPerMinute;
     // A conductor flags where the mark stands, and it roams a little before the pull.
     private const float FlagMarkRadiusMeters = 80f;
     private const int MarkHealthSampleMs = 250;
@@ -78,6 +78,9 @@ internal sealed partial class AutoRide : AutoCommon
     private DateTime startReachedAtUtc = DateTime.MaxValue;
     private int seenFeedVersion = -1;
     private long nextUpkeepCheckAtMs;
+    // The zone a party member's teleport, accepted during the ride, took the character into; spent by the next leg.
+    private uint offeredTerritoryId;
+    private RideLeg? activeLeg;
 
     public AutoRide(AutoHuntSession session, RideProgress progress, FlagListener listener, Announcement? announcement = null)
     {
@@ -718,6 +721,32 @@ internal sealed partial class AutoRide : AutoCommon
         return false;
     }
 
+    // The zone the ride is heading for: the flag waiting to be followed, else the one being travelled to.
+    internal bool TryGetHeadingZone(out uint territoryId)
+    {
+        territoryId = hasPending ? pending.TerritoryId : hasLegFlag ? legFlag.TerritoryId : 0u;
+        return territoryId != 0;
+    }
+
+    // The one time a party member's teleport cannot cross the leg's own.
+    internal bool AwaitsTeleport => activeLeg is { AwaitsTeleport: true };
+
+    internal void NoteTeleportOfferAccepted(uint territoryId) => offeredTerritoryId = territoryId;
+
+    // The party picked the landing when its teleport brought the character into the flag's zone before the leg, so the
+    // leg does not teleport again within the zone.
+    private bool TakeTeleportOffer(in FlagPost flag, string label, string zoneName)
+    {
+        var broughtIn = offeredTerritoryId == flag.TerritoryId && Svc.ClientState.TerritoryType == flag.TerritoryId;
+        offeredTerritoryId = 0;
+        if (broughtIn)
+        {
+            Diag($"{label}: a party member's teleport brought the character into {zoneName}; no teleport within the zone on the way to the flag");
+        }
+
+        return broughtIn;
+    }
+
     private bool TryTakePending(out FlagPost flag)
     {
         flag = pending;
@@ -740,23 +769,28 @@ internal sealed partial class AutoRide : AutoCommon
         progress.SetRidePhase(RidePhase.Travelling);
         Diag($"{label}: following the flag in {zoneName} at ({flag.MapX:F1}, {flag.MapY:F1}){InstanceText(flag)}, world ({flag.WorldX:F1}, {flag.WorldZ:F1}), posted {(DateTime.UtcNow - flag.PostedAtUtc).TotalSeconds:F0}s ago ({ConditionTag()})");
 
-        var leg = new RideLeg(flag, label);
+        var leg = new RideLeg(flag, label, TakeTeleportOffer(flag, label, zoneName));
         var completed = false;
         legFlag = flag;
         hasLegFlag = true;
+        activeLeg = leg;
         travelling = true;
         try
         {
             Status = $"Moving off to the flag in {zoneName}";
             if (await HumanDelay(HumanAction.MoveOff, label, interrupted))
             {
-                await RunWithStatusFrom(leg, async () => completed = await RunCancellable(leg, LegBudgetMs, label, interrupted));
+                var budgetMs = LegBudgetMs + RideLeg.TeleportWaitAllowanceMs(flag);
+                await RunWithStatusFrom(leg, async () => completed = await RunCancellable(leg, budgetMs, label, interrupted));
             }
         }
         finally
         {
             travelling = false;
             hasLegFlag = false;
+            activeLeg = null;
+            // An offer taken during the leg brought it in already; it must not spare the next leg its shortcut.
+            offeredTerritoryId = 0;
         }
 
         if (CancelToken.IsCancellationRequested)
@@ -1170,8 +1204,6 @@ internal sealed partial class AutoRide : AutoCommon
 
     private string StartZoneName()
         => announcement is { NamesTerritory: true } plan ? TerritoryNames.Of(plan.TerritoryId) : UnknownStartZone;
-
-    private static long SecondsSince(long startedAtMs) => (Environment.TickCount64 - startedAtMs) / TimeUnits.MillisecondsPerSecond;
 
     private static string PullText(in ZoneMarkSighting mark) => mark.Pulled ? "already pulled" : "not pulled yet";
 

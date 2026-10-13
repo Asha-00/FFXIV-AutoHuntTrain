@@ -113,7 +113,9 @@ internal sealed partial class AutoRide
         return Math.Min((int)Math.Floor(minutes / route.MinutesPerZone), route.Length - 1);
     }
 
-    // A zone owning no aetheryte is entered through its gateway, which has to be attuned instead.
+    // A zone owning no aetheryte is entered through its gateway, which has to be attuned instead. Elsewhere the zone's
+    // centre is aimed at, so the teleport lands at the attuned aetheryte best placed for wherever the next flag goes up,
+    // with the known traps counted.
     private static bool TryCatchUpDestination(uint territoryId, out Vector3 destination)
     {
         destination = Vector3.Zero;
@@ -127,19 +129,7 @@ internal sealed partial class AutoRide
             return ZoneAetherytes.IsAttuned(gateway.AetheryteId);
         }
 
-        var aetherytes = ZoneAetherytes.TeleportableIn(territoryId).Span;
-        for (var index = 0; index < aetherytes.Length; index++)
-        {
-            if (!ZoneAetherytes.IsAttuned(aetherytes[index].Id))
-            {
-                continue;
-            }
-
-            destination = aetherytes[index].Position;
-            return true;
-        }
-
-        return false;
+        return ZoneAetherytes.TryFindNearest(territoryId, destination, out _);
     }
 
     private async Task<bool> TeleportForCatchUp(uint territoryId, Vector3 destination, int step, int stops)

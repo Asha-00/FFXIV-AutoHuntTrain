@@ -14,12 +14,26 @@ internal readonly record struct ZoneGateway(uint AetheryteId, uint TerritoryId, 
 
 internal readonly record struct AethernetShortcut(ZoneAetheryte Source, ZoneAetheryte Destination, float SavedMeters);
 
+internal readonly record struct AetheryteLanding(ZoneAetheryte Aetheryte, float GroundMeters, ushort DetourMeters)
+{
+    public float CostMeters => GroundMeters + DetourMeters;
+}
+
 internal static class ZoneAetherytes
 {
     // TerritoryIntendedUse 1 marks a standard overworld field zone.
     private const byte StandardFieldUse = 1;
     // Interacting with a shard, picking the stop and the short load take about as long as running this far.
     private const float AethernetOverheadMeters = 80f;
+
+    // Landings that cost more than their ground distance shows. The Tempest: The Macarenses Angle stands on the abyssal
+    // floor at about -280, where the Level rows around it sit, while the Level rows around every hunt spawn of the zone
+    // sit at +122 or higher (a western ledge near +125, the shelves at +280 to +450), so a landing there owes at least a
+    // 400 m climb. Counted in, it still wins for the two ledge spawns beside it and loses to The Ondo Cups for the rest.
+    private static readonly AetheryteDetour[] detours =
+    [
+        new(AetheryteId: 148, ExtraMeters: 400),
+    ];
 
     private static readonly Dictionary<uint, ZoneAetheryte[]> byTerritory = new();
     private static readonly Dictionary<uint, uint[]> attunableIdsByTerritory = new();
@@ -80,32 +94,22 @@ internal static class ZoneAetherytes
         return false;
     }
 
-    // Unattuned aetherytes are skipped: a teleport to one is refused.
     public static bool TryFindNearest(uint territoryId, Vector3 target, out ZoneAetheryte nearest)
     {
-        var candidates = InTerritory(territoryId);
-        nearest = default;
-        var bestDistance = float.MaxValue;
-        for (var index = 0; index < candidates.Length; index++)
-        {
-            var candidate = candidates[index];
-            if (!IsAttuned(candidate.Id))
-            {
-                continue;
-            }
-
-            var distance = Vector3.DistanceSquared(candidate.Position, target);
-            if (distance >= bestDistance)
-            {
-                continue;
-            }
-
-            bestDistance = distance;
-            nearest = candidate;
-        }
-
-        return bestDistance < float.MaxValue;
+        var found = TryFindLanding(territoryId, target, out var landing);
+        nearest = landing.Aetheryte;
+        return found;
     }
+
+    // Unattuned aetherytes are skipped: a teleport to one is refused. An aetheryte's position comes from its map marker,
+    // which carries no height, and a flag carries none either, so the way left to go is the ground distance plus the
+    // climb a known trap adds; the target's height is never read.
+    public static bool TryFindLanding(uint territoryId, Vector3 target, out AetheryteLanding landing)
+        => TryFindCheapest(territoryId, target, countDetours: true, out landing);
+
+    // The pick on ground distance alone, so a log can name the trap a detour steered away from.
+    public static bool TryFindNearestOnGround(uint territoryId, Vector3 target, out AetheryteLanding landing)
+        => TryFindCheapest(territoryId, target, countDetours: false, out landing);
 
     public static ReadOnlyMemory<ZoneAetheryte> TeleportableIn(uint territoryId) => InTerritory(territoryId);
 
@@ -210,6 +214,47 @@ internal static class ZoneAetherytes
     }
 
     private static bool IsUsable(AethernetNode node) => node.Visible && IsAttuned(node.Stop.Id);
+
+    private static bool TryFindCheapest(uint territoryId, Vector3 target, bool countDetours, out AetheryteLanding landing)
+    {
+        var candidates = InTerritory(territoryId);
+        landing = default;
+        var bestCost = float.MaxValue;
+        for (var index = 0; index < candidates.Length; index++)
+        {
+            var candidate = candidates[index];
+            if (!IsAttuned(candidate.Id))
+            {
+                continue;
+            }
+
+            var ground = GroundDistance.Between(candidate.Position, target);
+            var detour = DetourMeters(candidate.Id);
+            var cost = countDetours ? ground + detour : ground;
+            if (cost >= bestCost)
+            {
+                continue;
+            }
+
+            bestCost = cost;
+            landing = new AetheryteLanding(candidate, ground, detour);
+        }
+
+        return bestCost < float.MaxValue;
+    }
+
+    private static ushort DetourMeters(uint aetheryteId)
+    {
+        for (var index = 0; index < detours.Length; index++)
+        {
+            if (detours[index].AetheryteId == aetheryteId)
+            {
+                return detours[index].ExtraMeters;
+            }
+        }
+
+        return 0;
+    }
 
     private static int ClosestNode(AethernetNode[] nodes, Vector3 position, bool usableOnly)
     {
@@ -506,6 +551,8 @@ internal static class ZoneAetherytes
 
         return float.IsFinite(position.X) && float.IsFinite(position.Y) && float.IsFinite(position.Z);
     }
+
+    private readonly record struct AetheryteDetour(ushort AetheryteId, ushort ExtraMeters);
 
     private readonly record struct AethernetNode(ZoneAetheryte Stop, uint PrimaryId, bool Visible);
 

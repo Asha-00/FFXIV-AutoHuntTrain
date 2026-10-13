@@ -149,12 +149,18 @@ public abstract partial class AutoCommon
 
     // A teleport can be accepted and never start casting; the idle guard catches that in seconds and the attempt is
     // retried after a short backoff. A fault is different: the request was answered and the same request gets the same
-    // answer, so it earns one retry and never the Return escalation.
+    // answer, so it earns one retry and never the Return escalation. The destination's height may be unknown (NaN): the
+    // aetheryte is picked on ground distance, and only the aethernet leg needs a number there.
     internal async Task<bool> TeleportToTerritory(uint territoryId, Vector3 destination, string label, int perAttemptTimeoutMs, int attempts = 4)
     {
         if (Svc.ClientState.TerritoryType == territoryId)
         {
             return true;
+        }
+
+        if (float.IsNaN(destination.Y))
+        {
+            destination = destination with { Y = 0f };
         }
 
         var zoneName = TerritoryNames.Of(territoryId);
@@ -173,12 +179,12 @@ public abstract partial class AutoCommon
             hopDestination = gateway.Position;
             Diag($"{label}: {zoneName} owns no aetheryte; going through {gateway.Name} and its aethernet");
         }
-        else if (ZoneAetherytes.TryFindNearest(territoryId, destination, out var aetheryte))
+        else if (ZoneAetherytes.TryFindLanding(territoryId, destination, out var landing))
         {
             hopTerritoryId = territoryId;
             // Its exact position makes the library pick this aetheryte instead of whichever shard sits nearest the destination.
-            hopDestination = aetheryte.Position;
-            Diag($"{label}: {aetheryte.Name} is the attuned aetheryte nearest the destination in {zoneName}");
+            hopDestination = landing.Aetheryte.Position;
+            Diag($"{label}: {DescribeLanding(territoryId, destination, landing, zoneName)}");
         }
         else
         {
@@ -250,6 +256,16 @@ public abstract partial class AutoCommon
         }
 
         return Svc.ClientState.TerritoryType == territoryId;
+    }
+
+    private static string DescribeLanding(uint territoryId, Vector3 destination, in AetheryteLanding landing, string zoneName)
+    {
+        if (!ZoneAetherytes.TryFindNearestOnGround(territoryId, destination, out var straight) || straight.Aetheryte.Id == landing.Aetheryte.Id)
+        {
+            return $"{landing.Aetheryte.Name} is the attuned aetheryte nearest the destination in {zoneName}, {landing.GroundMeters:F0}m from it";
+        }
+
+        return $"{landing.Aetheryte.Name} is the best attuned landing for the destination in {zoneName}, {landing.GroundMeters:F0}m from it; {straight.Aetheryte.Name} is closer at {straight.GroundMeters:F0}m, but a landing there costs a {straight.DetourMeters}m climb";
     }
 
     private static bool NotOnSolidGround()
